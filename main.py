@@ -7,6 +7,12 @@ with pdfplumber.open(pdf_path) as pdf:
 
 lignes = texte.split("\n")
 
-for ligne in lignes:
-    if ligne.startswith("Kiln 1"):
-        print("FOUND:", ligne)
+# Find where the Cuisson section starts
+debut_cuisson = None
+
+for numero, ligne in enumerate(lignes):
+    if ligne.startswith("Cuisson"):
+        debut_cuisson = numero
+        break
+
+print("Cuisson starts at line:", debut_cuisson)
