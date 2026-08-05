@@ -205,6 +205,53 @@ for ligne in table[indice_environnement + 1:]:
     environnement.append(emission)
 
 
+#Récuperer les données compresseur 
+compresseurs = []
+
+indice_compresseur = None
+
+for numero, ligne in enumerate(table):
+
+    if ligne and nettoyer(ligne[0]) == "COMPRESSEUR":
+        indice_compresseur = numero
+        break
+
+
+# Récupérer les en-têtes
+entetes_compresseur = table[indice_compresseur]
+
+
+# Parcourir les lignes après COMPRESSEUR
+for ligne in table[indice_compresseur + 1:]:
+
+    if not ligne:
+        continue
+
+    nom_equipement = nettoyer(ligne[0])
+
+    # Ignorer une ligne sans équipement
+    if not nom_equipement:
+        continue
+
+    compresseur = {
+        "equipement": nom_equipement
+    }
+
+    for entete, valeur in zip(
+        entetes_compresseur[1:],
+        ligne[1:]
+    ):
+
+        entete = nettoyer(entete)
+        valeur = nettoyer(valeur)
+
+        if entete is not None and valeur is not None and valeur != "":
+            compresseur[entete] = float(valeur)
+
+    compresseurs.append(compresseur)
+
+
+
 shift = {
     "date_debut": date_debut,
     "heure_debut": heure_debut,
@@ -214,7 +261,8 @@ shift = {
     "responsable": responsable,
     "cuisson": cuisson,
     "broyeurs": broyeurs,
-    "environnement": environnement
+    "environnement": environnement,
+    "compresseurs":compresseurs
 }
 
 pprint(shift, sort_dicts=False) #on ne trie pas alphabétiquements
