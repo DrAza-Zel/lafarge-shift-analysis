@@ -154,6 +154,57 @@ for numero, ligne in enumerate(table):
 
         broyeurs.append(broyeur)
 
+
+# Extraire les données environnement
+environnement = []
+
+indice_environnement = None
+
+for numero, ligne in enumerate(table):
+
+    if ligne and nettoyer(ligne[0]) == "Environnement":
+        indice_environnement = numero
+        break
+
+
+# Récupérer les en-têtes
+entetes_environnement = table[indice_environnement]
+
+
+# Parcourir les lignes après Environnement
+for ligne in table[indice_environnement + 1:]:
+
+    if not ligne:
+        continue
+
+    nom_emission = nettoyer(ligne[0])
+
+    # Fin de la section environnement
+    if nom_emission == "COMPRESSEUR":
+        break
+
+    # Ignorer les lignes sans nom
+    if not nom_emission:
+        continue
+
+    emission = {
+        "equipement": nom_emission
+    }
+
+    for entete, valeur in zip(
+        entetes_environnement[1:],
+        ligne[1:]
+    ):
+
+        entete = nettoyer(entete)
+        valeur = nettoyer(valeur)
+
+        if entete is not None and valeur is not None and valeur != "":
+            emission[entete] = float(valeur)
+
+    environnement.append(emission)
+
+
 shift = {
     "date_debut": date_debut,
     "heure_debut": heure_debut,
@@ -162,7 +213,8 @@ shift = {
     "poste": poste,
     "responsable": responsable,
     "cuisson": cuisson,
-    "broyeurs": broyeurs
+    "broyeurs": broyeurs,
+    "environnement": environnement
 }
 
 pprint(shift, sort_dicts=False) #on ne trie pas alphabétiquements
