@@ -1,46 +1,72 @@
+import os
+
 from src.extract_pdf import extraire_shift
 from src.database import (
     initialiser_base,
     enregistrer_shift,
-    afficher_shifts,
-    afficher_mesures_shift
+    afficher_shifts
 )
 
-from pprint import pprint
+
+DOSSIER_PDF = "pdf"
 
 
-pdf_path = "pdf/shift_test.pdf"
-
-
-# Initialiser la base
+# Initialiser la base de données
 initialiser_base()
 
+# Chercher tous les PDF du dossier
+fichiers_pdf = []
 
-# Extraire le PDF
-shift = extraire_shift(pdf_path)
+for nom_fichier in os.listdir(DOSSIER_PDF):
 
-
-# Afficher les données extraites
-pprint(shift, sort_dicts=False)
-
-
-# Enregistrer le shift
-enregistrer_shift(shift)
+    if nom_fichier.lower().endswith(".pdf"):
+        fichiers_pdf.append(nom_fichier)
 
 
-# Afficher les shifts
+# Trier les fichiers par nom
+fichiers_pdf.sort()
+
+
+print("Nombre de PDF trouvés :", len(fichiers_pdf))
+
+
+
+# Traiter chaque PDF
+for nom_fichier in fichiers_pdf:
+
+    pdf_path = os.path.join(
+        DOSSIER_PDF,
+        nom_fichier
+    )
+
+    print("\n------------------------------")
+    print("Traitement :", nom_fichier)
+    print("------------------------------")
+
+    try:
+
+        # Extraire les données du PDF
+        shift = extraire_shift(pdf_path)
+
+        # Enregistrer dans SQLite
+        enregistrer_shift(shift)
+
+    except Exception as erreur:
+
+        print(
+            "Erreur pendant le traitement de",
+            nom_fichier,
+            ":",
+            erreur
+        )
+
+
+# Afficher tous les shifts enregistrés
 shifts = afficher_shifts()
 
-print("\nShifts présents dans la base :")
+print("\n==============================")
+print("Shifts présents dans la base")
+print("==============================")
 
 for shift_base in shifts:
     print(shift_base)
-
-
-# Afficher les mesures du shift 1
-mesures = afficher_mesures_shift(1)
-
-print("\nMesures du shift 1 :")
-
-for mesure in mesures:
-    print(mesure)
