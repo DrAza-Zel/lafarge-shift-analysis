@@ -1,4 +1,5 @@
 import pdfplumber
+import re
 from pprint import pprint
 
 pdf_path = "pdf/shift_test.pdf"
@@ -13,8 +14,38 @@ def nettoyer(texte):
 
 with pdfplumber.open(pdf_path) as pdf:
     page = pdf.pages[0]
+
+    texte = page.extract_text()
     table = page.extract_table()
 
+    # Extraction date + heures
+match_intervalle = re.search(
+    r"Interval From\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}).*?"
+    r"To\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})",
+    texte
+)
+
+date_debut = match_intervalle.group(1)
+heure_debut = match_intervalle.group(2)
+date_fin = match_intervalle.group(3)
+heure_fin = match_intervalle.group(4)
+
+print(date_debut)
+print(heure_debut)
+print(date_fin)
+print(heure_fin)
+
+# Extraire le poste et le responsable
+match_poste = re.search(
+    r"\b(P\d+)\s+([A-ZÀ-ÖØ-Ý'-]+)\b",
+    texte
+)
+
+poste = match_poste.group(1)
+responsable = match_poste.group(2)
+
+print("Poste :", poste)
+print("Responsable :", responsable)
 
 # Chercher la ligne d'en-tête Cuisson
 indice_cuisson = None
@@ -83,5 +114,14 @@ for ligne in table[indice_cuisson + 1:]:
 
     cuisson.append(equipement)
 
+shift = {
+    "date_debut": date_debut,
+    "heure_debut": heure_debut,
+    "date_fin": date_fin,
+    "heure_fin": heure_fin,
+    "poste": poste,
+    "responsable": responsable,
+    "cuisson": cuisson
+}
 
-pprint(cuisson, sort_dicts=False)
+pprint(shift, sort_dicts=False) #on ne trie pas alphabétiquements
