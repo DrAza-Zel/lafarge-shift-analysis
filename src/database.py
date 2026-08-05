@@ -295,3 +295,35 @@ def afficher_shifts():
     connexion.close()
 
     return shifts
+
+
+def afficher_mesures_shift(shift_id):
+
+    # Connexion à la base
+    connexion = sqlite3.connect(DB_PATH)
+
+    # Création du curseur
+    curseur = connexion.cursor()
+
+
+    # Récupérer toutes les mesures du shift demandé
+    curseur.execute("""
+        SELECT
+            section,
+            equipement,
+            produit,
+            kpi,
+            valeur
+        FROM mesures
+        WHERE shift_id = ?
+        ORDER BY section, equipement
+    """, (
+        shift_id,
+    ))
+
+
+    mesures = curseur.fetchall()
+
+    connexion.close()
+
+    return mesures
