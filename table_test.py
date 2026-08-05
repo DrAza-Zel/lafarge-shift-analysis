@@ -18,7 +18,8 @@ with pdfplumber.open(pdf_path) as pdf:
     texte = page.extract_text()
     table = page.extract_table()
 
-    # Extraction date + heures
+
+# Extraction date + heures
 match_intervalle = re.search(
     r"Interval From\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}).*?"
     r"To\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})",
@@ -114,6 +115,45 @@ for ligne in table[indice_cuisson + 1:]:
 
     cuisson.append(equipement)
 
+
+# Extraire les broyeurs ciment
+broyeurs = []
+
+for numero, ligne in enumerate(table):
+
+    if not ligne:
+        continue
+
+    nom_broyeur = nettoyer(ligne[0])
+
+    if nom_broyeur and nom_broyeur.startswith("Broyeur Ciments"):
+
+        # Cette ligne contient les noms des colonnes
+        entetes_broyeur = ligne
+
+        # La ligne suivante contient les valeurs
+        ligne_valeurs = table[numero + 1]
+
+        produit = nettoyer(ligne_valeurs[0])
+
+        broyeur = {
+            "broyeur": nom_broyeur,
+            "produit": produit
+        }
+
+        for entete, valeur in zip(
+            entetes_broyeur[1:],
+            ligne_valeurs[1:]
+        ):
+
+            entete = nettoyer(entete)
+            valeur = nettoyer(valeur)
+
+            if entete is not None and valeur is not None and valeur != "":
+                broyeur[entete] = float(valeur)
+
+        broyeurs.append(broyeur)
+
 shift = {
     "date_debut": date_debut,
     "heure_debut": heure_debut,
@@ -121,7 +161,8 @@ shift = {
     "heure_fin": heure_fin,
     "poste": poste,
     "responsable": responsable,
-    "cuisson": cuisson
+    "cuisson": cuisson,
+    "broyeurs": broyeurs
 }
 
 pprint(shift, sort_dicts=False) #on ne trie pas alphabétiquements
