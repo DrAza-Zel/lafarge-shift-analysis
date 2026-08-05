@@ -30,7 +30,57 @@ for numero, ligne in enumerate(table):
 entetes = table[indice_cuisson]
 
 
-# afficher les entetes et les lignes sous forme dictionnaire 
+
+#CODE TESTED ON KILN COMME TOUTES LES CASES SONT =! NONE
+# Chercher Kiln 1
+ligne_kiln1 = None
+
+for ligne in table[indice_cuisson + 1:]:
+
+    if ligne and nettoyer(ligne[0]) == "Kiln 1":
+        ligne_kiln1 = ligne
+        break
+
+
+# Créer le dictionnaire
+kiln1 = {
+    "equipement": nettoyer(ligne_kiln1[0])
+}
+
+
+# Ce dictionnaire sert à compter
+# combien de fois chaque en-tête apparaît
+compteur_entetes = {}
+
+
+for entete, valeur in zip(entetes[1:], ligne_kiln1[1:]):
+
+    entete = nettoyer(entete)
+    valeur = nettoyer(valeur)
+
+    if entete is not None and valeur is not None and valeur != "":
+
+        # Compter combien de fois cet en-tête a déjà été rencontré
+        if entete not in compteur_entetes:
+            compteur_entetes[entete] = 1
+        else:
+            compteur_entetes[entete] += 1
+
+        # Premier en-tête : nom normal
+        # En-têtes suivants : _2, _3, ...
+        if compteur_entetes[entete] == 1:
+            nom_entete = entete
+        else:
+            nom_entete = entete + "_" + str(compteur_entetes[entete])
+
+        # Ajouter la valeur dans le dictionnaire final
+        kiln1[nom_entete] = float(valeur)
+
+
+pprint(kiln1, sort_dicts=False)
+
+
+#CODE POUR GENERALISER SUR TOUT LES ELEMENTS APRES AVOIR TESTE SUR KILN1
 entetes_uniques = []
 compteur_entetes = {}
 
