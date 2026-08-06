@@ -9,7 +9,7 @@ from src.database import (
     recuperer_mesures_pour_analyse,
     recuperer_kpis_distincts
 )
-
+from src.scoring import calculer_score_shift
 from src.validation import detecter_anomalies
 from src.objectifs_kpi import verifier_configuration_scoring
 
@@ -206,4 +206,61 @@ else:
             probleme["probleme"]
         )
 
+# Comparaison des scores des shifts
+print("\n==============================")
+print("COMPARAISON DES SHIFTS")
+print("==============================")
 
+
+for shift_base in shifts:
+
+    shift_id = shift_base[0]
+    date_debut = shift_base[1]
+    poste = shift_base[5]
+    responsable_l1 = shift_base[6]
+    responsable_l2 = shift_base[7]
+
+
+    resultat = calculer_score_shift(
+        shift_id
+    )
+
+
+    score_global = resultat[
+        "score_global"
+    ]
+
+    couverture = resultat[
+        "couverture"
+    ]
+
+
+    # Choisir le responsable disponible
+    responsable = (
+        responsable_l2
+        or responsable_l1
+        or "-"
+    )
+
+
+    if score_global is None:
+        score_texte = "Non calculable"
+
+    else:
+        score_texte = (
+            str(score_global)
+            + " / 100"
+        )
+
+
+    print(
+        date_debut,
+        "|",
+        poste,
+        "|",
+        responsable,
+        "| Score :",
+        score_texte,
+        "| Couverture :",
+        str(couverture) + "%"
+    )
