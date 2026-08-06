@@ -11,7 +11,7 @@ from src.database import (
 )
 
 from src.validation import detecter_anomalies
-
+from src.objectifs_kpi import verifier_configuration_scoring
 
 # Dossier général de recherche
 DOSSIER_RECHERCHE = Path.home()
@@ -178,6 +178,32 @@ else:
     for nom_kpi in kpis_non_configures:
         print("-", nom_kpi)
 
+# Vérifier si les KPI sont prêts pour le scoring
+problemes_scoring = verifier_configuration_scoring(kpis)
 
+print("\n==============================")
+print("PRÉPARATION DU SCORING")
+print("==============================")
+
+
+if not problemes_scoring:
+
+    print("Tous les KPI sont prêts pour le scoring.")
+
+else:
+
+    for probleme in problemes_scoring:
+
+        print(
+            probleme["section"],
+            "|",
+            probleme["equipement"],
+            "|",
+            probleme["produit"],
+            "|",
+            probleme["kpi"],
+            "->",
+            probleme["probleme"]
+        )
 
 
