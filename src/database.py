@@ -20,7 +20,6 @@ def initialiser_base():
     curseur = connexion.cursor()
 
 
-  
     # Table des shifts
     curseur.execute("""
         CREATE TABLE IF NOT EXISTS shifts (
@@ -30,7 +29,8 @@ def initialiser_base():
             date_fin TEXT NOT NULL,
             heure_fin TEXT NOT NULL,
             poste TEXT,
-            responsable TEXT
+            responsable_l1 TEXT,
+            responsable_l2 TEXT
         )
     """)
 
@@ -52,10 +52,8 @@ def initialiser_base():
     """)
 
 
-    # Sauvegarder les changements
     connexion.commit()
 
-    # Fermer la connexion
     connexion.close()
 
 
@@ -71,7 +69,7 @@ def enregistrer_shift(shift):
     curseur = connexion.cursor()
 
 
-    # Vérifier si le shift existe déja
+    # Vérifier si le shift existe déjà
     curseur.execute("""
         SELECT id
         FROM shifts
@@ -88,6 +86,7 @@ def enregistrer_shift(shift):
         shift["poste"]
     ))
 
+
     shift_existant = curseur.fetchone()
 
 
@@ -100,10 +99,9 @@ def enregistrer_shift(shift):
 
         print("Shift déjà enregistré avec l'id :", shift_id)
 
-        return shift_id, False #le shift existe deja
+        return shift_id, False
 
 
-   
     # Enregistrer le nouveau shift
     curseur.execute("""
         INSERT INTO shifts (
@@ -112,16 +110,18 @@ def enregistrer_shift(shift):
             date_fin,
             heure_fin,
             poste,
-            responsable
+            responsable_l1,
+            responsable_l2
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
         shift["date_debut"],
         shift["heure_debut"],
         shift["date_fin"],
         shift["heure_fin"],
         shift["poste"],
-        shift["responsable"]
+        shift["responsable_l1"],
+        shift["responsable_l2"]
     ))
 
 
@@ -129,7 +129,6 @@ def enregistrer_shift(shift):
     shift_id = curseur.lastrowid
 
 
-   
     # Enregistrer les données Cuisson
     for equipement in shift["cuisson"]:
 
@@ -160,7 +159,6 @@ def enregistrer_shift(shift):
             ))
 
 
-   
     # Enregistrer les broyeurs ciment
     for broyeur in shift["broyeurs"]:
 
@@ -192,8 +190,7 @@ def enregistrer_shift(shift):
             ))
 
 
-    
-    # Enregistrer environnement
+    # Enregistrer les données environnement
     for equipement in shift["environnement"]:
 
         nom_equipement = equipement["equipement"]
@@ -223,8 +220,7 @@ def enregistrer_shift(shift):
             ))
 
 
-   
-    # Enregistrer les compresseurs
+    # Enregistrer les données compresseurs
     for equipement in shift["compresseurs"]:
 
         nom_equipement = equipement["equipement"]
@@ -254,8 +250,6 @@ def enregistrer_shift(shift):
             ))
 
 
-   
-    # Sauvegarder
     connexion.commit()
 
     connexion.close()
@@ -266,7 +260,7 @@ def enregistrer_shift(shift):
 
 
 def afficher_shifts():
-    
+
     # Connexion à la base
     connexion = sqlite3.connect(DB_PATH)
 
@@ -274,7 +268,6 @@ def afficher_shifts():
     curseur = connexion.cursor()
 
 
-  
     # Récupérer tous les shifts
     curseur.execute("""
         SELECT
@@ -284,7 +277,8 @@ def afficher_shifts():
             date_fin,
             heure_fin,
             poste,
-            responsable
+            responsable_l1,
+            responsable_l2
         FROM shifts
         ORDER BY id
     """)

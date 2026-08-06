@@ -56,30 +56,29 @@ for pdf_path in fichiers_pdf:
 
     try:
 
-        # Extraire les données du PDF
+    # Extraire les données du PDF
         shift = extraire_shift(str(pdf_path))
 
-        # Enregistrer dans SQLite
+   
+
+    # Temporairement désactivé
         shift_id, est_nouveau = enregistrer_shift(shift)
 
-        # Mettre à jour les compteurs
         if est_nouveau:
             nombre_nouveaux += 1
-
         else:
             nombre_existants += 1
-
 
     except Exception as erreur:
 
         nombre_erreurs += 1
 
-        print("\nERREUR")
+        print("ERREUR")
         print("Fichier :", pdf_path.name)
         print("Type :", type(erreur).__name__)
         print("Message :", erreur)
 
-        traceback.print_exc()
+   
 
 
 # Résumé de l'import
