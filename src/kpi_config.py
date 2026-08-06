@@ -2,199 +2,153 @@ CONFIG_KPI = {
 
     # Cuisson
     "Running Hours (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Number of stops (#)": {
-        "type": "minimiser",
-        "poids": None
+        "type": "minimiser"
     },
 
     "Feed rate (t/h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Production (t)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "STEC (Mj/t)": {
-        "type": "minimiser",
-        "poids": None
+        "type": "minimiser"
     },
 
     "SEEC (kwh/t)": {
-        "type": "minimiser",
-        "poids": None
+        "type": "minimiser"
     },
 
     "TSR (%)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Co_broyage (%)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "HLC (%)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Pélite Calcinée (t)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "CaO libre (%)": {
-        "type": "cible",
-        "poids": None,
-        "cible": None
+        "type": "cible"
     },
 
     "LSF (%)": {
-        "type": "cible",
-        "poids": None,
-        "cible": None
+        "type": "cible"
     },
 
 
     # Broyeurs ciment
     "HM (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Arrêt (#)": {
-        "type": "minimiser",
-        "poids": None
+        "type": "minimiser"
     },
 
     "Production (tonne)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Débit (t/h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "maximiser"
     },
 
     "HM CP (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "K/C fab (%)": {
-        "type": "cible",
-        "poids": None,
-        "cible": None
+        "type": "cible"
     },
 
     "Adjuvant Resist (g/t)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "Adjuvant Débit (g/t)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "MM (%)": {
-        "type": "cible",
-        "poids": None,
-        "cible": None
+        "type": "information"
     },
 
 
     # Environnement
     "NNC Dust (#)": {
-        "type": "conformite",
-        "poids": None
+        "type": "conformite"
     },
 
     "NNC NOx (#)": {
-        "type": "conformite",
-        "poids": None
+        "type": "conformite"
     },
 
     "NNC SO2 (#)": {
-        "type": "conformite",
-        "poids": None
+        "type": "conformite"
     },
 
     "NNC VOC (#)": {
-        "type": "conformite",
-        "poids": None
+        "type": "conformite"
     },
 
     "NNC HLC (#)": {
-        "type": "conformite",
-        "poids": None
+        "type": "conformite"
     },
 
     "Dust (mg/Nm3)": {
-        "type": "conformite",
-        "poids": None,
-        "limite": None
+        "type": "information"
     },
 
     "NOx (mg/Nm3)": {
-        "type": "conformite",
-        "poids": None,
-        "limite": None
+        "type": "information"
     },
 
     "SO2 (mg/Nm3)": {
-        "type": "conformite",
-        "poids": None,
-        "limite": None
+        "type": "information"
     },
 
     "VOC (mg/Nm3)": {
-        "type": "conformite",
-        "poids": None,
-        "limite": None
+        "type": "information"
     },
 
     "HLC (mg/Nm3)": {
-        "type": "conformite",
-        "poids": None,
-        "limite": None
+        "type": "information"
     },
 
 
     # Compresseurs
     "HM CP1 (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "HM CP2 (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "HM CP3 (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "HM CP4 (h)": {
-        "type": "a_valider",
-        "poids": None
+        "type": "information"
     },
 
     "PRESSION (bar)": {
-        "type": "cible",
-        "poids": None,
-        "cible": None
+        "type": "cible"
     }
 }
 
