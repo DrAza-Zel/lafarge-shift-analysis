@@ -351,3 +351,29 @@ def recuperer_mesures_pour_analyse():
     connexion.close()
 
     return mesures
+
+def recuperer_kpis_distincts():
+
+    connexion = sqlite3.connect(DB_PATH)
+
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        SELECT DISTINCT
+            section,
+            equipement,
+            produit,
+            kpi
+        FROM mesures
+        ORDER BY
+            section,
+            equipement,
+            produit,
+            kpi
+    """)
+
+    kpis = curseur.fetchall()
+
+    connexion.close()
+
+    return kpis

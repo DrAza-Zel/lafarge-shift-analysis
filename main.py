@@ -6,7 +6,8 @@ from src.database import (
     initialiser_base,
     enregistrer_shift,
     afficher_shifts,
-    recuperer_mesures_pour_analyse
+    recuperer_mesures_pour_analyse,
+    recuperer_kpis_distincts
 )
 
 from src.validation import detecter_anomalies
@@ -134,3 +135,27 @@ else:
             "| médiane :",
             anomalie["mediane"]
         )
+
+# Afficher les KPI disponibles
+kpis = recuperer_kpis_distincts()
+
+print("\n==============================")
+print("KPI DISPONIBLES")
+print("==============================")
+
+for kpi in kpis:
+
+    section = kpi[0]
+    equipement = kpi[1]
+    produit = kpi[2]
+    nom_kpi = kpi[3]
+
+    print(
+        section,
+        "|",
+        equipement,
+        "|",
+        produit,
+        "|",
+        nom_kpi
+    )
