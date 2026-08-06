@@ -11,15 +11,20 @@ def nettoyer(texte):
 
 def extraire_shift(pdf_path):
 
+   
     # Lecture du PDF
+    
+
     with pdfplumber.open(pdf_path) as pdf:
         page = pdf.pages[0]
         texte = page.extract_text()
         table = page.extract_table()
 
 
-  
-    # Extraction date + heures 
+    
+    # Extraction date + heures
+    
+
     match_intervalle = re.search(
         r"Interval From\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}).*?"
         r"To\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})",
@@ -32,7 +37,9 @@ def extraire_shift(pdf_path):
     heure_fin = match_intervalle.group(4)
 
 
-  # Extraction poste + responsable
+    
+    # Extraction poste + responsable
+    
     match_poste = re.search(
         r"\b(P\d+)\s+([A-ZÀ-ÖØ-Ý'-]+)\b",
         texte
@@ -42,9 +49,9 @@ def extraire_shift(pdf_path):
     responsable = match_poste.group(2)
 
 
-   
+    
     # Chercher la ligne d'en-tête Cuisson
-    indice_cuisson = None
+    
 
     for numero, ligne in enumerate(table):
 
@@ -59,6 +66,8 @@ def extraire_shift(pdf_path):
 
     
     # Rendre les en-têtes uniques
+   
+
     entetes_uniques = []
     compteur_entetes = {}
 
@@ -86,8 +95,9 @@ def extraire_shift(pdf_path):
         entetes_uniques.append(nom_entete)
 
 
-
-    # Extraction de tous les équipements Cuisson
+    
+    # Extraction des équipements Cuisson
+    
 
     cuisson = []
 
@@ -98,11 +108,13 @@ def extraire_shift(pdf_path):
 
         nom_equipement = nettoyer(ligne[0])
 
-        # Le début de Broyeur signifie la fin de Cuisson
-        if nom_equipement and nom_equipement.startswith("Broyeur"):
+        # Fin de la section Cuisson
+        if (
+            nom_equipement
+            and nom_equipement.startswith("Broyeur")
+        ):
             break
 
-        # Ignorer les lignes sans nom d'équipement
         if not nom_equipement:
             continue
 
@@ -127,8 +139,9 @@ def extraire_shift(pdf_path):
         cuisson.append(equipement)
 
 
-  
     # Extraction des broyeurs ciment
+    
+
     broyeurs = []
 
     for numero, ligne in enumerate(table):
@@ -138,56 +151,91 @@ def extraire_shift(pdf_path):
 
         nom_broyeur = nettoyer(ligne[0])
 
-        if (
+        # Si ce n'est pas un broyeur ciment
+        if not (
             nom_broyeur
             and nom_broyeur.startswith("Broyeur Ciments")
         ):
+            continue
 
-            # Cette ligne contient les noms des colonnes
-            entetes_broyeur = ligne
 
-            # La ligne suivante contient les valeurs
-            ligne_valeurs = table[numero + 1]
+        # Ligne contenant les en-têtes
+        entetes_broyeur = ligne
 
-            produit = nettoyer(ligne_valeurs[0])
 
-            broyeur = {
-                "broyeur": nom_broyeur,
-                "produit": produit
-            }
+        # Vérifier qu'une ligne existe après
+        if numero + 1 >= len(table):
+            continue
 
-            for entete, valeur in zip(
-                entetes_broyeur[1:],
-                ligne_valeurs[1:]
+
+        # Ligne normalement contenant le produit
+        ligne_valeurs = table[numero + 1]
+
+        if not ligne_valeurs:
+            continue
+
+
+        produit = nettoyer(ligne_valeurs[0])
+
+
+        # Aucun produit
+        if not produit:
+            continue
+
+
+        # Si la ligne suivante est déjà une nouvelle section,
+        # alors ce broyeur n'a pas de données.
+        if (
+            produit.startswith("Broyeur Ciments")
+            or produit == "Environnement"
+            or produit == "COMPRESSEUR"
+            or produit == "Cuisson"
+        ):
+            continue
+
+
+        broyeur = {
+            "broyeur": nom_broyeur,
+            "produit": produit
+        }
+
+
+        for entete, valeur in zip(
+            entetes_broyeur[1:],
+            ligne_valeurs[1:]
+        ):
+
+            entete = nettoyer(entete)
+            valeur = nettoyer(valeur)
+
+            if (
+                entete is not None
+                and valeur is not None
+                and valeur != ""
             ):
-
-                entete = nettoyer(entete)
-                valeur = nettoyer(valeur)
-
-                if (
-                    entete is not None
-                    and valeur is not None
-                    and valeur != ""
-                ):
-                    broyeur[entete] = float(valeur)
-
-            broyeurs.append(broyeur)
+                broyeur[entete] = float(valeur)
 
 
- 
+        broyeurs.append(broyeur)
+
+
+    
     # Extraction environnement
+   
     environnement = []
 
     indice_environnement = None
 
     for numero, ligne in enumerate(table):
 
-        if ligne and nettoyer(ligne[0]) == "Environnement":
+        if (
+            ligne
+            and nettoyer(ligne[0]) == "Environnement"
+        ):
             indice_environnement = numero
             break
 
 
-    # En-têtes de la section environnement
     entetes_environnement = table[indice_environnement]
 
 
@@ -198,16 +246,18 @@ def extraire_shift(pdf_path):
 
         nom_emission = nettoyer(ligne[0])
 
-        # COMPRESSEUR signifie la fin de la section
+        # Fin de la section environnement
         if nom_emission == "COMPRESSEUR":
             break
 
         if not nom_emission:
             continue
 
+
         emission = {
             "equipement": nom_emission
         }
+
 
         for entete, valeur in zip(
             entetes_environnement[1:],
@@ -224,23 +274,28 @@ def extraire_shift(pdf_path):
             ):
                 emission[entete] = float(valeur)
 
+
         environnement.append(emission)
 
 
-   
+    
     # Extraction compresseurs
+    
+
     compresseurs = []
 
     indice_compresseur = None
 
     for numero, ligne in enumerate(table):
 
-        if ligne and nettoyer(ligne[0]) == "COMPRESSEUR":
+        if (
+            ligne
+            and nettoyer(ligne[0]) == "COMPRESSEUR"
+        ):
             indice_compresseur = numero
             break
 
 
-    # En-têtes de la section compresseur
     entetes_compresseur = table[indice_compresseur]
 
 
@@ -254,9 +309,11 @@ def extraire_shift(pdf_path):
         if not nom_equipement:
             continue
 
+
         compresseur = {
             "equipement": nom_equipement
         }
+
 
         for entete, valeur in zip(
             entetes_compresseur[1:],
@@ -273,10 +330,14 @@ def extraire_shift(pdf_path):
             ):
                 compresseur[entete] = float(valeur)
 
+
         compresseurs.append(compresseur)
 
 
+    
     # Regrouper toutes les données du shift
+    
+
     shift = {
         "date_debut": date_debut,
         "heure_debut": heure_debut,
@@ -291,5 +352,8 @@ def extraire_shift(pdf_path):
     }
 
 
-    # Envoyer le résultat à main.py
+
+    # Renvoyer les données à main.py
+    
+
     return shift
