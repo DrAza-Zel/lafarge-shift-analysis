@@ -372,6 +372,247 @@ else:
 st.divider()
 
 
+st.divider()
+
+
+# Comparaison globale des postes
+st.subheader("📊 Comparaison des postes P1 / P2 / P3")
+
+
+donnees_postes = []
+
+
+postes = sorted(
+    df_shifts["poste"]
+    .dropna()
+    .unique()
+)
+
+
+for poste in postes:
+
+    # Tous les shifts du poste
+    df_poste = df_shifts[
+        df_shifts["poste"] == poste
+    ]
+
+
+    # Seulement les shifts pouvant participer au classement
+    df_poste_classable = df_poste[
+        df_poste["classable"]
+    ]
+
+
+    nombre_total = len(
+        df_poste
+    )
+
+
+    nombre_classables = len(
+        df_poste_classable
+    )
+
+
+    # Couverture moyenne de tous les shifts
+    couverture_moyenne = df_poste[
+        "couverture"
+    ].mean()
+
+
+    # Nombre moyen d'anomalies
+    anomalies_moyennes = df_poste[
+        "anomalies"
+    ].mean()
+
+
+    # Calculer les performances uniquement
+    # avec les shifts suffisamment couverts
+    if nombre_classables > 0:
+
+        score_moyen = df_poste_classable[
+            "score_global"
+        ].mean()
+
+
+        meilleur_score = df_poste_classable[
+            "score_global"
+        ].max()
+
+
+    else:
+
+        score_moyen = None
+        meilleur_score = None
+
+
+    donnees_postes.append({
+
+        "Poste": poste,
+
+        "Shifts total": nombre_total,
+
+        "Shifts classables": nombre_classables,
+
+        "Score moyen": (
+            None
+            if score_moyen is None
+            else round(score_moyen, 2)
+        ),
+
+        "Meilleur score": (
+            None
+            if meilleur_score is None
+            else round(meilleur_score, 2)
+        ),
+
+        "Couverture moyenne (%)": round(
+            couverture_moyenne,
+            2
+        ),
+
+        "Anomalies moyennes": round(
+            anomalies_moyennes,
+            2
+        )
+    })
+
+
+df_postes = pd.DataFrame(
+    donnees_postes
+)
+
+
+# Créer le classement des postes
+df_postes_classement = df_postes[
+    df_postes["Score moyen"].notna()
+].copy()
+
+
+df_postes_classement = (
+    df_postes_classement
+    .sort_values(
+        "Score moyen",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
+
+
+df_postes_classement[
+    "Rang"
+] = range(
+    1,
+    len(df_postes_classement) + 1
+)
+
+
+# Mettre Rang en première colonne
+colonnes_postes = [
+    "Rang",
+    "Poste",
+    "Shifts total",
+    "Shifts classables",
+    "Score moyen",
+    "Meilleur score",
+    "Couverture moyenne (%)",
+    "Anomalies moyennes"
+]
+
+
+df_postes_classement = df_postes_classement[
+    colonnes_postes
+]
+
+
+st.dataframe(
+    df_postes_classement,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# Graphique du score moyen des postes
+st.write("### Score moyen par poste")
+
+
+if df_postes_classement.empty:
+
+    st.info(
+        "Aucun poste ne possède de shift classable."
+    )
+
+else:
+
+    graphique_postes = (
+        df_postes_classement[
+            [
+                "Poste",
+                "Score moyen"
+            ]
+        ]
+        .set_index("Poste")
+    )
+
+
+    st.bar_chart(
+        graphique_postes
+    )
+
+
+# Evolution des postes dans le temps
+st.write("### Évolution des postes dans le temps")
+
+
+df_evolution_postes = df_shifts[
+    (
+        df_shifts["classable"]
+    )
+    &
+    (
+        df_shifts["score_global"].notna()
+    )
+][
+    [
+        "date",
+        "poste",
+        "score_global"
+    ]
+].copy()
+
+
+if df_evolution_postes.empty:
+
+    st.info(
+        "Pas encore assez de données pour afficher l'évolution."
+    )
+
+else:
+
+    df_evolution_postes = (
+        df_evolution_postes
+        .pivot_table(
+            index="date",
+            columns="poste",
+            values="score_global",
+            aggfunc="mean"
+        )
+        .sort_index()
+    )
+
+
+    st.line_chart(
+        df_evolution_postes
+    )
+
+
+st.caption(
+    "Le classement des postes utilise uniquement les shifts "
+    "dont la couverture est supérieure ou égale à "
+    + str(SEUIL_COUVERTURE_CLASSEMENT)
+    + "%. Le nombre de shifts classables doit également être "
+    "pris en compte lors de l'interprétation."
+)
+
 # Comparaison de deux shifts
 st.subheader("⚔️ Comparaison de deux shifts")
 
