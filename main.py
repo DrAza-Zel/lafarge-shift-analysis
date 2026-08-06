@@ -1,6 +1,6 @@
 from pathlib import Path
 import traceback
-
+from src.kpi_config import verifier_kpis_configures
 from src.extract_pdf import extraire_shift
 from src.database import (
     initialiser_base,
@@ -159,3 +159,21 @@ for kpi in kpis:
         "|",
         nom_kpi
     )
+
+# Vérifier que tous les KPI sont configurés
+kpis_non_configures = verifier_kpis_configures(kpis)
+
+print("\n==============================")
+print("VÉRIFICATION CONFIGURATION KPI")
+print("==============================")
+
+if not kpis_non_configures:
+
+    print("Tous les KPI sont configurés.")
+
+else:
+
+    print("KPI non configurés :")
+
+    for nom_kpi in kpis_non_configures:
+        print("-", nom_kpi)
