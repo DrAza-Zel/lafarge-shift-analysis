@@ -3,11 +3,15 @@ import pandas as pd
 
 from src.database import (
     afficher_shifts,
+    afficher_mesures_shift,
     recuperer_mesures_pour_analyse
 )
 
 from src.validation import detecter_anomalies
-from src.scoring import calculer_score_shift
+from src.scoring import (
+    calculer_score_shift,
+    obtenir_details_score_shift
+)
 from src.objectifs_kpi import SEUIL_COUVERTURE_CLASSEMENT
 
 
@@ -1152,6 +1156,347 @@ else:
 
 
 st.divider()
+
+
+st.divider()
+
+
+# Analyse détaillée d'un shift
+st.subheader("🔬 Analyse détaillée d'un shift")
+
+st.write(
+    "Sélectionnez un shift pour comprendre le calcul "
+    "de son score et consulter ses KPI."
+)
+
+
+# Créer une étiquette pour chaque shift
+df_shifts["label_detail"] = (
+    df_shifts["date_debut"]
+    + " "
+    + df_shifts["heure_debut"]
+    + " | "
+    + df_shifts["poste"]
+    + " | "
+    + df_shifts["responsable"]
+)
+
+
+labels_detail = df_shifts[
+    "label_detail"
+].tolist()
+
+
+shift_detail_label = st.selectbox(
+    "Shift à analyser",
+    labels_detail
+)
+
+
+shift_detail = df_shifts[
+    df_shifts["label_detail"]
+    == shift_detail_label
+].iloc[0]
+
+
+shift_detail_id = int(
+    shift_detail["id"]
+)
+
+
+# Calculer les résultats du shift
+resultat_detail = calculer_score_shift(
+    shift_detail_id
+)
+
+
+details_kpis = obtenir_details_score_shift(
+    shift_detail_id
+)
+
+
+# Informations principales
+st.write("### Résultat général")
+
+
+col_detail1, col_detail2, col_detail3, col_detail4 = st.columns(
+    4
+)
+
+
+score_detail = resultat_detail[
+    "score_global"
+]
+
+
+couverture_detail = resultat_detail[
+    "couverture"
+]
+
+
+anomalies_detail = resultat_detail[
+    "nombre_anomalies"
+]
+
+
+classable_detail = (
+    score_detail is not None
+    and couverture_detail
+    >= SEUIL_COUVERTURE_CLASSEMENT
+)
+
+
+if score_detail is None:
+
+    score_detail_affiche = "N/A"
+
+else:
+
+    score_detail_affiche = (
+        str(score_detail)
+        + " / 100"
+    )
+
+
+col_detail1.metric(
+    "Score global",
+    score_detail_affiche
+)
+
+
+col_detail2.metric(
+    "Couverture",
+    str(
+        couverture_detail
+    ) + "%"
+)
+
+
+col_detail3.metric(
+    "Anomalies",
+    anomalies_detail
+)
+
+
+if classable_detail:
+
+    statut_detail = "Classable"
+
+else:
+
+    statut_detail = "Non classable"
+
+
+col_detail4.metric(
+    "Statut",
+    statut_detail
+)
+
+
+if not classable_detail:
+
+    st.warning(
+        "Ce shift reste analysable, mais sa couverture "
+        "est insuffisante pour participer au classement."
+    )
+
+
+# Scores des grandes sections
+st.write("### Scores par domaine")
+
+
+sections_detail = resultat_detail[
+    "sections"
+]
+
+
+df_sections_detail = pd.DataFrame({
+
+    "Domaine": [
+        "Cuisson",
+        "Broyeurs",
+        "Environnement",
+        "Compresseurs"
+    ],
+
+    "Score": [
+        sections_detail["cuisson"]["score"],
+        sections_detail["broyeurs"]["score"],
+        sections_detail["environnement"]["score"],
+        sections_detail["compresseurs"]["score"]
+    ],
+
+    "Couverture (%)": [
+        sections_detail["cuisson"]["couverture"],
+        sections_detail["broyeurs"]["couverture"],
+        sections_detail["environnement"]["couverture"],
+        sections_detail["compresseurs"]["couverture"]
+    ]
+})
+
+
+st.dataframe(
+    df_sections_detail,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+graphique_sections_detail = (
+    df_sections_detail[
+        [
+            "Domaine",
+            "Score"
+        ]
+    ]
+    .set_index("Domaine")
+)
+
+
+st.bar_chart(
+    graphique_sections_detail
+)
+
+
+# Explication KPI par KPI
+st.write("### Détail du calcul des KPI")
+
+
+df_details_kpis = pd.DataFrame(
+    details_kpis
+)
+
+
+df_details_kpis = df_details_kpis[
+    [
+        "section",
+        "equipement",
+        "produit",
+        "kpi",
+        "valeur",
+        "poids",
+        "score",
+        "statut"
+    ]
+]
+
+
+df_details_kpis.columns = [
+    "Section",
+    "Équipement",
+    "Produit",
+    "KPI",
+    "Valeur",
+    "Poids",
+    "Score / 100",
+    "Statut"
+]
+
+
+st.dataframe(
+    df_details_kpis,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+st.caption(
+    "Un KPI indiqué comme 'Suspect - exclu du score' "
+    "reste conservé dans la base, mais ne participe pas "
+    "au calcul de la note du shift."
+)
+
+
+# Toutes les données brutes du shift
+st.write("### Données extraites du rapport")
+
+
+mesures_detail = afficher_mesures_shift(
+    shift_detail_id
+)
+
+
+df_mesures_detail = pd.DataFrame(
+    mesures_detail,
+    columns=[
+        "Section",
+        "Équipement",
+        "Produit",
+        "KPI",
+        "Valeur"
+    ]
+)
+
+
+st.dataframe(
+    df_mesures_detail,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# Anomalies spécifiques à ce shift
+st.write("### Valeurs suspectes du shift")
+
+
+toutes_anomalies_detail = detecter_anomalies(
+    recuperer_mesures_pour_analyse()
+)
+
+
+anomalies_du_shift = [
+
+    anomalie
+
+    for anomalie in toutes_anomalies_detail
+
+    if anomalie["shift_id"]
+    == shift_detail_id
+]
+
+
+if not anomalies_du_shift:
+
+    st.success(
+        "Aucune valeur suspecte détectée pour ce shift."
+    )
+
+else:
+
+    df_anomalies_detail = pd.DataFrame(
+        anomalies_du_shift
+    )
+
+
+    df_anomalies_detail = df_anomalies_detail[
+        [
+            "section",
+            "equipement",
+            "produit",
+            "kpi",
+            "valeur",
+            "mediane",
+            "score_anomalie"
+        ]
+    ]
+
+
+    df_anomalies_detail.columns = [
+        "Section",
+        "Équipement",
+        "Produit",
+        "KPI",
+        "Valeur",
+        "Médiane historique",
+        "Score anomalie"
+    ]
+
+
+    st.dataframe(
+        df_anomalies_detail,
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 # Evolution du score dans le temps

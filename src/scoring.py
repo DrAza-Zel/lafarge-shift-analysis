@@ -541,3 +541,154 @@ def calculer_score_shift(shift_id):
 
         "groupes": resultats_groupes
     }
+
+
+def obtenir_details_score_shift(shift_id):
+
+    mesures_shift = afficher_mesures_shift(
+        shift_id
+    )
+
+    toutes_les_mesures = (
+        recuperer_mesures_pour_analyse()
+    )
+
+    anomalies = detecter_anomalies(
+        toutes_les_mesures
+    )
+
+
+    # Construire les clés des anomalies du shift
+    cles_anomalies = set()
+
+    for anomalie in anomalies:
+
+        if anomalie["shift_id"] == shift_id:
+
+            cle = (
+                anomalie["section"],
+                anomalie["equipement"],
+                anomalie["produit"],
+                anomalie["kpi"]
+            )
+
+            cles_anomalies.add(
+                cle
+            )
+
+
+    # Transformer les mesures en dictionnaire
+    valeurs_shift = {}
+
+    for mesure in mesures_shift:
+
+        section = mesure[0]
+        equipement = mesure[1]
+        produit = mesure[2]
+        kpi = mesure[3]
+        valeur = mesure[4]
+
+        cle = (
+            section,
+            equipement,
+            produit,
+            kpi
+        )
+
+        valeurs_shift[cle] = valeur
+
+
+    details = []
+
+
+    # Parcourir tous les KPI actifs du scoring
+    for cle, configuration_specifique in OBJECTIFS_KPI.items():
+
+        section = cle[0]
+        equipement = cle[1]
+        produit = cle[2]
+        kpi = cle[3]
+
+
+        poids = configuration_specifique.get(
+            "poids"
+        )
+
+
+        # KPI absent du shift
+        if cle not in valeurs_shift:
+
+            details.append({
+                "section": section,
+                "equipement": equipement,
+                "produit": produit,
+                "kpi": kpi,
+                "valeur": None,
+                "poids": poids,
+                "score": None,
+                "statut": "Manquant"
+            })
+
+            continue
+
+
+        valeur = valeurs_shift[
+            cle
+        ]
+
+
+        # KPI suspect
+        if cle in cles_anomalies:
+
+            details.append({
+                "section": section,
+                "equipement": equipement,
+                "produit": produit,
+                "kpi": kpi,
+                "valeur": valeur,
+                "poids": poids,
+                "score": None,
+                "statut": "Suspect - exclu du score"
+            })
+
+            continue
+
+
+        configuration = (
+            obtenir_configuration_complete(
+                section,
+                equipement,
+                produit,
+                kpi
+            )
+        )
+
+
+        score = calculer_score_kpi(
+            valeur,
+            configuration
+        )
+
+
+        if score is None:
+
+            statut = "Non calculable"
+
+        else:
+
+            statut = "Utilisé"
+
+
+        details.append({
+            "section": section,
+            "equipement": equipement,
+            "produit": produit,
+            "kpi": kpi,
+            "valeur": valeur,
+            "poids": poids,
+            "score": score,
+            "statut": statut
+        })
+
+
+    return details
