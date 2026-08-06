@@ -100,7 +100,7 @@ def enregistrer_shift(shift):
 
         print("Shift déjà enregistré avec l'id :", shift_id)
 
-        return shift_id
+        return shift_id, False #le shift existe deja
 
 
    
@@ -262,11 +262,11 @@ def enregistrer_shift(shift):
 
     print("Nouveau shift enregistré avec l'id :", shift_id)
 
-    return shift_id
+    return shift_id, True
 
 
 def afficher_shifts():
-
+    
     # Connexion à la base
     connexion = sqlite3.connect(DB_PATH)
 

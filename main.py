@@ -28,8 +28,10 @@ fichiers_pdf.sort()
 
 
 print("Nombre de PDF trouvés :", len(fichiers_pdf))
-
-
+#des ciompteurs pour les pdf/shifts
+nombre_nouveaux = 0
+nombre_existants = 0
+nombre_erreurs = 0
 
 # Traiter chaque PDF
 for nom_fichier in fichiers_pdf:
@@ -49,9 +51,17 @@ for nom_fichier in fichiers_pdf:
         shift = extraire_shift(pdf_path)
 
         # Enregistrer dans SQLite
-        enregistrer_shift(shift)
+        shift_id, est_nouveau = enregistrer_shift(shift)
+
+         # Mettre à jour les compteurs
+        if est_nouveau:
+            nombre_nouveaux += 1
+
+        else:
+            nombre_existants += 1
 
     except Exception as erreur:
+        nombre_erreurs +=1  
 
         print(
             "Erreur pendant le traitement de",
@@ -60,6 +70,16 @@ for nom_fichier in fichiers_pdf:
             erreur
         )
 
+
+# Résumé de l'import
+print("\n==============================")
+print("RÉSUMÉ DE L'IMPORT")
+print("==============================")
+
+print("PDF analysés :", len(fichiers_pdf))
+print("Nouveaux shifts :", nombre_nouveaux)
+print("Déjà présents :", nombre_existants)
+print("Erreurs :", nombre_erreurs)
 
 # Afficher tous les shifts enregistrés
 shifts = afficher_shifts()
