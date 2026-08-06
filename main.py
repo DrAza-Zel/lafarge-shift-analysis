@@ -177,3 +177,6 @@ else:
 
     for nom_kpi in kpis_non_configures:
         print("-", nom_kpi)
+
+
+
