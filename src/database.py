@@ -316,6 +316,36 @@ def afficher_mesures_shift(shift_id):
     ))
 
 
+
+    mesures = curseur.fetchall()
+
+    connexion.close()
+
+    return mesures
+
+def recuperer_mesures_pour_analyse():
+
+    connexion = sqlite3.connect(DB_PATH)
+
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        SELECT
+            shifts.id,
+            shifts.date_debut,
+            shifts.poste,
+            shifts.responsable_l1,
+            shifts.responsable_l2,
+            mesures.section,
+            mesures.equipement,
+            mesures.produit,
+            mesures.kpi,
+            mesures.valeur
+        FROM mesures
+        JOIN shifts
+            ON mesures.shift_id = shifts.id
+    """)
+
     mesures = curseur.fetchall()
 
     connexion.close()

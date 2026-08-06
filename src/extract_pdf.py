@@ -124,6 +124,22 @@ def extraire_shift(pdf_path):
             )
 
         entetes_uniques.append(nom_entete)
+    # Harmoniser les anciennes versions du rapport
+    if "Co_broyage (%)" not in entetes_uniques:
+
+        indices_hlc = []
+
+        for indice, entete in enumerate(entetes_uniques):
+
+            if (
+                entete is not None
+                and entete.startswith("HLC (%)")
+            ):
+                indices_hlc.append(indice)
+
+        if len(indices_hlc) >= 2:
+            entetes_uniques[indices_hlc[0]] = "Co_broyage (%)"
+            entetes_uniques[indices_hlc[1]] = "HLC (%)"
 
 
     # Extraction des équipements Cuisson

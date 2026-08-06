@@ -5,20 +5,19 @@ from src.extract_pdf import extraire_shift
 from src.database import (
     initialiser_base,
     enregistrer_shift,
-    afficher_shifts
+    afficher_shifts,
+    recuperer_mesures_pour_analyse
 )
 
+from src.validation import detecter_anomalies
 
 
 # Dossier général de recherche
-
-
 DOSSIER_RECHERCHE = Path.home()
 
 
 # Initialiser la base de données
 initialiser_base()
-
 
 
 # Chercher tous les Tracking Shift Report
@@ -40,7 +39,6 @@ print(
 )
 
 
-
 # Compteurs
 nombre_nouveaux = 0
 nombre_existants = 0
@@ -56,18 +54,19 @@ for pdf_path in fichiers_pdf:
 
     try:
 
-    # Extraire les données du PDF
+        # Extraire les données du PDF
         shift = extraire_shift(str(pdf_path))
 
-   
-
-    # Temporairement désactivé
+        # Enregistrer le shift dans SQLite
         shift_id, est_nouveau = enregistrer_shift(shift)
 
+        # Mettre à jour les compteurs
         if est_nouveau:
             nombre_nouveaux += 1
+
         else:
             nombre_existants += 1
+
 
     except Exception as erreur:
 
@@ -78,7 +77,7 @@ for pdf_path in fichiers_pdf:
         print("Type :", type(erreur).__name__)
         print("Message :", erreur)
 
-   
+        traceback.print_exc()
 
 
 # Résumé de l'import
@@ -96,8 +95,42 @@ print("Erreurs :", nombre_erreurs)
 shifts = afficher_shifts()
 
 print("\n==============================")
-print("Shifts présents dans la base")
+print("SHIFTS PRÉSENTS DANS LA BASE")
 print("==============================")
 
 for shift_base in shifts:
     print(shift_base)
+
+
+# Récupérer les mesures pour analyse
+mesures = recuperer_mesures_pour_analyse()
+
+
+# Détecter les valeurs suspectes
+anomalies = detecter_anomalies(mesures)
+
+
+print("\n==============================")
+print("VALEURS SUSPECTES")
+print("==============================")
+
+
+if not anomalies:
+
+    print("Aucune valeur suspecte détectée.")
+
+else:
+
+    for anomalie in anomalies:
+
+        print(
+            anomalie["date"],
+            "|",
+            anomalie["equipement"],
+            "|",
+            anomalie["kpi"],
+            "| valeur :",
+            anomalie["valeur"],
+            "| médiane :",
+            anomalie["mediane"]
+        )
