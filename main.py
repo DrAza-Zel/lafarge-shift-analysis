@@ -12,7 +12,7 @@ from src.database import (
 from src.scoring import calculer_score_shift
 from src.validation import detecter_anomalies
 from src.objectifs_kpi import verifier_configuration_scoring
-
+from src.objectifs_kpi import SEUIL_COUVERTURE_CLASSEMENT
 # Dossier général de recherche
 DOSSIER_RECHERCHE = Path.home()
 
@@ -212,6 +212,9 @@ print("COMPARAISON DES SHIFTS")
 print("==============================")
 
 
+resultats_comparaison = []
+
+
 for shift_base in shifts:
 
     shift_id = shift_base[0]
@@ -234,8 +237,11 @@ for shift_base in shifts:
         "couverture"
     ]
 
+    nombre_anomalies = resultat[
+        "nombre_anomalies"
+    ]
 
-    # Choisir le responsable disponible
+
     responsable = (
         responsable_l2
         or responsable_l1
@@ -243,14 +249,43 @@ for shift_base in shifts:
     )
 
 
+    # Vérifier si le shift peut être classé
+    classable = (
+        score_global is not None
+        and couverture
+        >= SEUIL_COUVERTURE_CLASSEMENT
+    )
+
+
+    resultats_comparaison.append({
+        "shift_id": shift_id,
+        "date": date_debut,
+        "poste": poste,
+        "responsable": responsable,
+        "score": score_global,
+        "couverture": couverture,
+        "anomalies": nombre_anomalies,
+        "classable": classable
+    })
+
+
     if score_global is None:
+
         score_texte = "Non calculable"
 
     else:
+
         score_texte = (
             str(score_global)
             + " / 100"
         )
+
+
+    if classable:
+        statut = "Classable"
+
+    else:
+        statut = "Couverture insuffisante"
 
 
     print(
@@ -262,5 +297,84 @@ for shift_base in shifts:
         "| Score :",
         score_texte,
         "| Couverture :",
-        str(couverture) + "%"
+        str(couverture) + "%",
+        "|",
+        statut
     )
+
+
+# Garder uniquement les shifts suffisamment couverts
+shifts_classables = [
+
+    resultat
+
+    for resultat in resultats_comparaison
+
+    if resultat["classable"]
+]
+
+
+# Trier du meilleur score au moins bon
+shifts_classables.sort(
+    key=lambda resultat: resultat["score"],
+    reverse=True
+)
+
+
+print("\n==============================")
+print("CLASSEMENT DES SHIFTS")
+print("==============================")
+
+
+for position, resultat in enumerate(
+    shifts_classables,
+    start=1
+):
+
+    print(
+        position,
+        "-",
+        resultat["date"],
+        "|",
+        resultat["poste"],
+        "|",
+        resultat["responsable"],
+        "|",
+        resultat["score"],
+        "/ 100",
+        "| Couverture :",
+        str(resultat["couverture"]) + "%"
+    )
+
+
+# Afficher séparément les shifts non classables
+shifts_non_classables = [
+
+    resultat
+
+    for resultat in resultats_comparaison
+
+    if not resultat["classable"]
+]
+
+
+if shifts_non_classables:
+
+    print("\n==============================")
+    print("SHIFTS NON CLASSÉS")
+    print("==============================")
+
+
+    for resultat in shifts_non_classables:
+
+        print(
+            resultat["date"],
+            "|",
+            resultat["poste"],
+            "|",
+            resultat["responsable"],
+            "| Score indicatif :",
+            resultat["score"],
+            "| Couverture :",
+            str(resultat["couverture"]) + "%"
+        )

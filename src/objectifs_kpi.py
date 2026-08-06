@@ -1,12 +1,312 @@
 from src.kpi_config import CONFIG_KPI
 
 
-# Les objectifs métier seront ajoutés ici
-# La clé identifie exactement :
-# section, équipement, produit, KPI
+# Poids des grandes parties du score final
+POIDS_SECTIONS = {
+    "cuisson": 45,
+    "broyeurs": 30,
+    "environnement": 20,
+    "compresseurs": 5
+}
 
+SEUIL_COUVERTURE_CLASSEMENT = 90
+
+# Configuration spécifique des KPI utilisés dans le scoring
 OBJECTIFS_KPI = {
 
+    # Cuisson - Kiln 1
+    (
+        "cuisson",
+        "Kiln 1",
+        None,
+        "STEC (Mj/t)"
+    ): {
+        "actif": True,
+        "objectif": 4050,
+        "limite": 4300,
+        "poids": 15
+    },
+
+    (
+        "cuisson",
+        "Kiln 1",
+        None,
+        "SEEC (kwh/t)"
+    ): {
+        "actif": True,
+        "objectif": 36,
+        "limite": 40,
+        "poids": 10
+    },
+
+    (
+        "cuisson",
+        "Kiln 1",
+        None,
+        "Number of stops (#)"
+    ): {
+        "actif": True,
+        "objectif": 0,
+        "limite": 2,
+        "poids": 8
+    },
+
+    (
+        "cuisson",
+        "Kiln 1",
+        None,
+        "CaO libre (%)"
+    ): {
+        "actif": True,
+        "cible": 2.0,
+        "tolerance": 0.8,
+        "poids": 6
+    },
+
+    (
+        "cuisson",
+        "Kiln 1",
+        None,
+        "LSF (%)"
+    ): {
+        "actif": True,
+        "cible": 98.5,
+        "tolerance": 1.5,
+        "poids": 6
+    },
+
+
+    # Broyeur Ciments 1 - CPJ55 Dwam
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55 (Dwam)",
+        "SEEC (kwh/t)"
+    ): {
+        "actif": True,
+        "objectif": 40,
+        "limite": 45,
+        "poids": 12
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55 (Dwam)",
+        "Arrêt (#)"
+    ): {
+        "actif": True,
+        "objectif": 0,
+        "limite": 2,
+        "poids": 8
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55 (Dwam)",
+        "Débit (t/h)"
+    ): {
+        "actif": True,
+        "objectif": 75,
+        "limite": 60,
+        "poids": 6
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55 (Dwam)",
+        "K/C fab (%)"
+    ): {
+        "actif": True,
+        "cible": 64,
+        "tolerance": 4,
+        "poids": 4
+    },
+
+
+    # Broyeur Ciments 1 - CPJ55PM
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55PM (PMF)",
+        "SEEC (kwh/t)"
+    ): {
+        "actif": True,
+        "objectif": 45,
+        "limite": 50,
+        "poids": 12
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55PM (PMF)",
+        "Arrêt (#)"
+    ): {
+        "actif": True,
+        "objectif": 0,
+        "limite": 2,
+        "poids": 8
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55PM (PMF)",
+        "Débit (t/h)"
+    ): {
+        "actif": True,
+        "objectif": 65,
+        "limite": 50,
+        "poids": 6
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 1",
+        "CPJ55PM (PMF)",
+        "K/C fab (%)"
+    ): {
+        "actif": True,
+        "cible": 87,
+        "tolerance": 4,
+        "poids": 4
+    },
+
+
+    # Broyeur Ciments 2 - CPJ55 Dwam
+    (
+        "broyeurs",
+        "Broyeur Ciments 2",
+        "CPJ55 (Dwam)",
+        "SEEC (kwh/t)"
+    ): {
+        "actif": True,
+        "objectif": 36,
+        "limite": 42,
+        "poids": 12
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 2",
+        "CPJ55 (Dwam)",
+        "Arrêt (#)"
+    ): {
+        "actif": True,
+        "objectif": 0,
+        "limite": 2,
+        "poids": 8
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 2",
+        "CPJ55 (Dwam)",
+        "Débit (t/h)"
+    ): {
+        "actif": True,
+        "objectif": 80,
+        "limite": 65,
+        "poids": 6
+    },
+
+    (
+        "broyeurs",
+        "Broyeur Ciments 2",
+        "CPJ55 (Dwam)",
+        "K/C fab (%)"
+    ): {
+        "actif": True,
+        "cible": 64,
+        "tolerance": 4,
+        "poids": 4
+    },
+
+
+    # Environnement
+    (
+        "environnement",
+        "Emission Kiln 1",
+        None,
+        "NNC Dust (#)"
+    ): {
+        "actif": True,
+        "limite": 0,
+        "poids": 4
+    },
+
+    (
+        "environnement",
+        "Emission Kiln 1",
+        None,
+        "NNC NOx (#)"
+    ): {
+        "actif": True,
+        "limite": 0,
+        "poids": 4
+    },
+
+    (
+        "environnement",
+        "Emission Kiln 1",
+        None,
+        "NNC SO2 (#)"
+    ): {
+        "actif": True,
+        "limite": 0,
+        "poids": 4
+    },
+
+    (
+        "environnement",
+        "Emission Kiln 1",
+        None,
+        "NNC VOC (#)"
+    ): {
+        "actif": True,
+        "limite": 0,
+        "poids": 4
+    },
+
+    (
+        "environnement",
+        "Emission Kiln 1",
+        None,
+        "NNC HLC (#)"
+    ): {
+        "actif": True,
+        "limite": 0,
+        "poids": 4
+    },
+
+
+    # Compresseurs
+    (
+        "compresseurs",
+        "Kiln 1",
+        None,
+        "PRESSION (bar)"
+    ): {
+        "actif": True,
+        "cible": 5.0,
+        "tolerance": 0.5,
+        "poids": 5
+    },
+
+    (
+        "compresseurs",
+        "Kiln 2",
+        None,
+        "PRESSION (bar)"
+    ): {
+        "actif": True,
+        "cible": 5.0,
+        "tolerance": 0.5,
+        "poids": 5
+    }
 }
 
 
@@ -17,19 +317,20 @@ def obtenir_configuration_complete(
     kpi
 ):
 
-    # Récupérer la configuration générale du KPI
     configuration_generale = CONFIG_KPI.get(kpi)
 
-    # KPI inconnu
     if configuration_generale is None:
         return None
 
 
-    # Faire une copie pour ne pas modifier CONFIG_KPI
+    # Créer une copie pour ne pas modifier CONFIG_KPI
     configuration = configuration_generale.copy()
 
 
-    # Construire la clé précise de la mesure
+    # Par défaut, un KPI n'entre pas dans le scoring
+    configuration["actif"] = False
+
+
     cle = (
         section,
         equipement,
@@ -38,12 +339,11 @@ def obtenir_configuration_complete(
     )
 
 
-    # Chercher une configuration métier spécifique
     configuration_specifique = OBJECTIFS_KPI.get(cle)
 
 
-    # Ajouter les objectifs spécifiques s'ils existent
     if configuration_specifique is not None:
+
         configuration.update(
             configuration_specifique
         )
@@ -89,21 +389,17 @@ def verifier_configuration_scoring(kpis_disponibles):
         type_kpi = configuration.get("type")
 
 
-        # KPI dont la règle métier n'est pas encore définie
-        if type_kpi == "a_valider":
-
-            problemes.append({
-                "section": section,
-                "equipement": equipement,
-                "produit": produit,
-                "kpi": kpi,
-                "probleme": "Règle métier à valider"
-            })
-
+        # Les KPI informatifs ne sont pas scorés
+        if type_kpi == "information":
             continue
 
 
-        # KPI à minimiser ou maximiser
+        # Si aucune configuration spécifique n'existe,
+        # le KPI ne participe pas au scoring V1
+        if not configuration.get("actif"):
+            continue
+
+
         if (
             type_kpi == "minimiser"
             or type_kpi == "maximiser"
@@ -131,7 +427,6 @@ def verifier_configuration_scoring(kpis_disponibles):
                 })
 
 
-        # KPI avec une valeur cible
         elif type_kpi == "cible":
 
             if configuration.get("cible") is None:
@@ -156,7 +451,6 @@ def verifier_configuration_scoring(kpis_disponibles):
                 })
 
 
-        # KPI de conformité
         elif type_kpi == "conformite":
 
             if configuration.get("limite") is None:
@@ -166,11 +460,10 @@ def verifier_configuration_scoring(kpis_disponibles):
                     "equipement": equipement,
                     "produit": produit,
                     "kpi": kpi,
-                    "probleme": "Limite de conformité manquante"
+                    "probleme": "Limite manquante"
                 })
 
 
-        # Vérifier le poids
         if configuration.get("poids") is None:
 
             problemes.append({
