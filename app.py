@@ -613,6 +613,324 @@ st.caption(
     "pris en compte lors de l'interprétation."
 )
 
+
+st.divider()
+
+
+# Comparaison globale des responsables
+st.subheader("👷 Comparaison des responsables")
+
+st.caption(
+    "Les scores moyens sont calculés uniquement à partir "
+    "des shifts suffisamment couverts pour participer au classement."
+)
+
+
+donnees_responsables = []
+
+
+responsables = sorted(
+    df_shifts["responsable"]
+    .dropna()
+    .unique()
+)
+
+
+for responsable in responsables:
+
+    # Tous les shifts du responsable
+    df_responsable = df_shifts[
+        df_shifts["responsable"]
+        == responsable
+    ]
+
+
+    # Seulement les shifts classables
+    df_responsable_classable = df_responsable[
+        df_responsable["classable"]
+    ]
+
+
+    nombre_total = len(
+        df_responsable
+    )
+
+
+    nombre_classables_responsable = len(
+        df_responsable_classable
+    )
+
+
+    couverture_moyenne = df_responsable[
+        "couverture"
+    ].mean()
+
+
+    anomalies_moyennes = df_responsable[
+        "anomalies"
+    ].mean()
+
+
+    if nombre_classables_responsable > 0:
+
+        score_moyen = df_responsable_classable[
+            "score_global"
+        ].mean()
+
+
+        meilleur_score = df_responsable_classable[
+            "score_global"
+        ].max()
+
+
+        score_cuisson_moyen = df_responsable_classable[
+            "score_cuisson"
+        ].mean()
+
+
+        score_broyeurs_moyen = df_responsable_classable[
+            "score_broyeurs"
+        ].mean()
+
+
+        score_environnement_moyen = df_responsable_classable[
+            "score_environnement"
+        ].mean()
+
+
+        score_compresseurs_moyen = df_responsable_classable[
+            "score_compresseurs"
+        ].mean()
+
+
+    else:
+
+        score_moyen = None
+        meilleur_score = None
+        score_cuisson_moyen = None
+        score_broyeurs_moyen = None
+        score_environnement_moyen = None
+        score_compresseurs_moyen = None
+
+
+    donnees_responsables.append({
+
+        "Responsable": responsable,
+
+        "Shifts total": nombre_total,
+
+        "Shifts classables": nombre_classables_responsable,
+
+        "Score moyen": (
+            None
+            if score_moyen is None
+            else round(score_moyen, 2)
+        ),
+
+        "Meilleur score": (
+            None
+            if meilleur_score is None
+            else round(meilleur_score, 2)
+        ),
+
+        "Cuisson moyenne": (
+            None
+            if pd.isna(score_cuisson_moyen)
+            else round(score_cuisson_moyen, 2)
+        ),
+
+        "Broyeurs moyenne": (
+            None
+            if pd.isna(score_broyeurs_moyen)
+            else round(score_broyeurs_moyen, 2)
+        ),
+
+        "Environnement moyen": (
+            None
+            if pd.isna(score_environnement_moyen)
+            else round(score_environnement_moyen, 2)
+        ),
+
+        "Compresseurs moyenne": (
+            None
+            if pd.isna(score_compresseurs_moyen)
+            else round(score_compresseurs_moyen, 2)
+        ),
+
+        "Couverture moyenne (%)": round(
+            couverture_moyenne,
+            2
+        ),
+
+        "Anomalies moyennes": round(
+            anomalies_moyennes,
+            2
+        )
+    })
+
+
+df_responsables = pd.DataFrame(
+    donnees_responsables
+)
+
+
+# Garder les responsables ayant au moins un shift classable
+df_responsables_classement = df_responsables[
+    df_responsables["Score moyen"].notna()
+].copy()
+
+
+# Trier du meilleur score moyen au moins bon
+df_responsables_classement = (
+    df_responsables_classement
+    .sort_values(
+        "Score moyen",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
+
+
+# Ajouter le rang
+df_responsables_classement[
+    "Rang"
+] = range(
+    1,
+    len(df_responsables_classement) + 1
+)
+
+
+# Colonnes du tableau principal
+df_responsables_affichage = df_responsables_classement[
+    [
+        "Rang",
+        "Responsable",
+        "Shifts total",
+        "Shifts classables",
+        "Score moyen",
+        "Meilleur score",
+        "Couverture moyenne (%)",
+        "Anomalies moyennes"
+    ]
+]
+
+
+st.write("### Classement général des responsables")
+
+
+st.dataframe(
+    df_responsables_affichage,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# Graphique du score moyen
+st.write("### Score moyen par responsable")
+
+
+if df_responsables_classement.empty:
+
+    st.info(
+        "Aucun responsable ne possède de shift classable."
+    )
+
+else:
+
+    graphique_responsables = (
+        df_responsables_classement[
+            [
+                "Responsable",
+                "Score moyen"
+            ]
+        ]
+        .set_index("Responsable")
+    )
+
+
+    st.bar_chart(
+        graphique_responsables
+    )
+
+
+# Comparaison par domaine
+st.write("### Performance moyenne par domaine")
+
+
+if not df_responsables_classement.empty:
+
+    df_domaines_responsables = (
+        df_responsables_classement[
+            [
+                "Responsable",
+                "Cuisson moyenne",
+                "Broyeurs moyenne",
+                "Environnement moyen",
+                "Compresseurs moyenne"
+            ]
+        ]
+        .set_index("Responsable")
+    )
+
+
+    st.bar_chart(
+        df_domaines_responsables
+    )
+
+
+# Evolution des responsables dans le temps
+st.write("### Évolution des responsables dans le temps")
+
+
+df_evolution_responsables = df_shifts[
+    (
+        df_shifts["classable"]
+    )
+    &
+    (
+        df_shifts["score_global"].notna()
+    )
+][
+    [
+        "date",
+        "responsable",
+        "score_global"
+    ]
+].copy()
+
+
+if df_evolution_responsables.empty:
+
+    st.info(
+        "Pas encore assez de données pour afficher l'évolution."
+    )
+
+else:
+
+    df_evolution_responsables = (
+        df_evolution_responsables
+        .pivot_table(
+            index="date",
+            columns="responsable",
+            values="score_global",
+            aggfunc="mean"
+        )
+        .sort_index()
+    )
+
+
+    st.line_chart(
+        df_evolution_responsables
+    )
+
+
+st.caption(
+    "Attention : avec un faible nombre de shifts par responsable, "
+    "les moyennes ne doivent pas être interprétées comme une "
+    "évaluation définitive de la performance."
+)
+
+
 # Comparaison de deux shifts
 st.subheader("⚔️ Comparaison de deux shifts")
 
