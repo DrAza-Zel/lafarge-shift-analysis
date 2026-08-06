@@ -4,9 +4,10 @@ import pandas as pd
 from src.database import (
     afficher_shifts,
     afficher_mesures_shift,
+    initialiser_base,
     recuperer_mesures_pour_analyse
 )
-
+from src.import_pdf import importer_pdf_bytes
 from src.validation import detecter_anomalies
 from src.scoring import (
     calculer_score_shift,
@@ -21,12 +22,135 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialiser la base de données
+initialiser_base()
+
 
 st.title("🏭 Shift Performance Dashboard")
 
 st.write(
     "Analyse et comparaison automatique des rapports de shift"
 )
+
+# Afficher le résultat du dernier import
+if "message_import" in st.session_state:
+
+    type_message = st.session_state[
+        "message_import"
+    ][0]
+
+    texte_message = st.session_state[
+        "message_import"
+    ][1]
+
+
+    if type_message == "success":
+
+        st.success(
+            texte_message
+        )
+
+    elif type_message == "warning":
+
+        st.warning(
+            texte_message
+        )
+
+
+    del st.session_state[
+        "message_import"
+    ]
+
+
+st.subheader("📥 Importer un rapport de shift")
+
+
+fichier_pdf = st.file_uploader(
+    "Sélectionnez un Tracking Shift Report au format PDF",
+    type=["pdf"]
+)
+
+
+if fichier_pdf is not None:
+
+    st.write(
+        "Fichier sélectionné :",
+        fichier_pdf.name
+    )
+
+
+    if st.button(
+        "Analyser et importer le rapport"
+    ):
+
+        try:
+
+            with st.spinner(
+                "Analyse du rapport en cours..."
+            ):
+
+                (
+                    shift_id,
+                    est_nouveau,
+                    shift_importe
+                ) = importer_pdf_bytes(
+                    fichier_pdf.getvalue()
+                )
+
+
+            date_shift = shift_importe[
+                "date_debut"
+            ]
+
+            poste_shift = shift_importe[
+                "poste"
+            ]
+
+
+            if est_nouveau:
+
+                st.session_state[
+                    "message_import"
+                ] = (
+                    "success",
+                    "Rapport importé avec succès : "
+                    + date_shift
+                    + " | "
+                    + poste_shift
+                    + " | ID "
+                    + str(shift_id)
+                )
+
+
+            else:
+
+                st.session_state[
+                    "message_import"
+                ] = (
+                    "warning",
+                    "Ce shift est déjà présent dans la base "
+                    "(ID "
+                    + str(shift_id)
+                    + ")."
+                )
+
+
+            # Recharger le dashboard
+            st.rerun()
+
+
+        except Exception as erreur:
+
+            st.error(
+                "Impossible d'analyser ce rapport."
+            )
+
+            st.error(
+                str(erreur)
+            )
+
+
+st.divider()
 
 
 # Récupérer les shifts
