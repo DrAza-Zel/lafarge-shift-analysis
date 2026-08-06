@@ -139,15 +139,16 @@ if fichier_pdf is not None:
             st.rerun()
 
 
+        except ValueError as erreur:
+
+            st.error( str(erreur))
+
+
         except Exception as erreur:
 
-            st.error(
-                "Impossible d'analyser ce rapport."
-            )
+            st.error("Une erreur inattendue est survenue pendant l'import.")
 
-            st.error(
-                str(erreur)
-            )
+            st.error(str(erreur))
 
 
 st.divider()
