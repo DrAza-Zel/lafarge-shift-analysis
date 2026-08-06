@@ -139,8 +139,9 @@ def extraire_shift(pdf_path):
         cuisson.append(equipement)
 
 
-    # Extraction des broyeurs ciment
     
+    # Extraction des broyeurs ciment
+
 
     broyeurs = []
 
@@ -151,7 +152,7 @@ def extraire_shift(pdf_path):
 
         nom_broyeur = nettoyer(ligne[0])
 
-        # Si ce n'est pas un broyeur ciment
+        # Chercher uniquement les lignes d'en-tête Broyeur Ciments
         if not (
             nom_broyeur
             and nom_broyeur.startswith("Broyeur Ciments")
@@ -159,64 +160,79 @@ def extraire_shift(pdf_path):
             continue
 
 
-        # Ligne contenant les en-têtes
+    # Cette ligne contient les noms des KPI
         entetes_broyeur = ligne
 
 
-        # Vérifier qu'une ligne existe après
-        if numero + 1 >= len(table):
-            continue
+    # Commencer à lire à la ligne suivante
+        indice_ligne = numero + 1
 
 
-        # Ligne normalement contenant le produit
-        ligne_valeurs = table[numero + 1]
+    # Lire toutes les lignes produit appartenant à ce broyeur
+        while indice_ligne < len(table):
 
-        if not ligne_valeurs:
-            continue
+            ligne_valeurs = table[indice_ligne]
 
-
-        produit = nettoyer(ligne_valeurs[0])
-
-
-        # Aucun produit
-        if not produit:
-            continue
+            if not ligne_valeurs:
+                indice_ligne += 1
+                continue
 
 
-        # Si la ligne suivante est déjà une nouvelle section,
-        # alors ce broyeur n'a pas de données.
-        if (
-            produit.startswith("Broyeur Ciments")
-            or produit == "Environnement"
-            or produit == "COMPRESSEUR"
-            or produit == "Cuisson"
-        ):
-            continue
+            produit = nettoyer(ligne_valeurs[0])
 
 
-        broyeur = {
-            "broyeur": nom_broyeur,
-            "produit": produit
-        }
+        # Ligne vide
+            if not produit:
+                indice_ligne += 1
+                continue
 
 
-        for entete, valeur in zip(
-            entetes_broyeur[1:],
-            ligne_valeurs[1:]
-        ):
-
-            entete = nettoyer(entete)
-            valeur = nettoyer(valeur)
+        
+        # Détecter la fin du broyeur actuel
+        
 
             if (
-                entete is not None
-                and valeur is not None
-                and valeur != ""
+                produit.startswith("Broyeur Ciments")
+                or produit == "Environnement"
+                or produit == "COMPRESSEUR"
+                or produit == "Cuisson"
             ):
-                broyeur[entete] = float(valeur)
+                break
 
 
-        broyeurs.append(broyeur)
+        
+        # Créer une ligne pour ce produit
+        
+
+            broyeur = {
+                "broyeur": nom_broyeur,
+                "produit": produit
+            }
+
+
+        # Associer les KPI à leurs valeurs
+            for entete, valeur in zip(
+                entetes_broyeur[1:],
+                ligne_valeurs[1:]
+            ):
+
+                entete = nettoyer(entete)
+                valeur = nettoyer(valeur)
+
+                if (
+                    entete is not None
+                    and valeur is not None
+                    and valeur != ""
+                ):
+                    broyeur[entete] = float(valeur)
+
+
+        # Ajouter ce produit
+            broyeurs.append(broyeur)
+
+
+        # Passer à la ligne suivante
+            indice_ligne += 1
 
 
     
