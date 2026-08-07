@@ -377,3 +377,31 @@ def recuperer_kpis_distincts():
     connexion.close()
 
     return kpis
+
+def modifier_responsables_shift(
+    shift_id,
+    responsable_l1,
+    responsable_l2
+):
+
+    connexion = sqlite3.connect(DB_PATH)
+
+    curseur = connexion.cursor()
+
+
+    curseur.execute("""
+        UPDATE shifts
+        SET
+            responsable_l1 = ?,
+            responsable_l2 = ?
+        WHERE id = ?
+    """, (
+        responsable_l1,
+        responsable_l2,
+        shift_id
+    ))
+
+
+    connexion.commit()
+
+    connexion.close()

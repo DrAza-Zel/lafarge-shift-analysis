@@ -1,6 +1,6 @@
 import pdfplumber
 import re
-
+from src.responsables import normaliser_responsables
 
 def nettoyer(texte):
     if texte is None:
@@ -74,13 +74,11 @@ def extraire_shift(pdf_path):
                 )
 
             elif "Responsable de conduite L1" in entete:
-                responsable_l1 = nettoyer(
-                    ligne_valeurs[indice]
+                 responsable_l1 = normaliser_responsables(nettoyer(ligne_valeurs[indice])
                 ) or None
 
             elif "Responsable de conduite L2" in entete:
-                responsable_l2 = nettoyer(
-                    ligne_valeurs[indice]
+                responsable_l2 =normaliser_responsables(nettoyer(ligne_valeurs[indice])
                 ) or None 
 
 

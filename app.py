@@ -1,45 +1,31 @@
 import streamlit as st
 import pandas as pd
 
-from src.style import (
-    appliquer_style_holcim,
-    afficher_header_holcim,
-    afficher_titre_page,
-    afficher_footer
-)
+from src.responsables import fusionner_responsables, normaliser_responsables
+from src.style import appliquer_style_holcim, afficher_header_holcim, afficher_footer
 from src.database import (
     initialiser_base,
     afficher_shifts,
     afficher_mesures_shift,
-    recuperer_mesures_pour_analyse
+    recuperer_mesures_pour_analyse,
+    modifier_responsables_shift,
 )
-
 from src.validation import detecter_anomalies
-
-from src.scoring import (
-    calculer_score_shift,
-    obtenir_details_score_shift
-)
-
-from src.objectifs_kpi import (
-    SEUIL_COUVERTURE_CLASSEMENT
-)
-
+from src.scoring import calculer_score_shift, obtenir_details_score_shift
+from src.objectifs_kpi import SEUIL_COUVERTURE_CLASSEMENT
 from src.import_pdf import importer_pdf_bytes
 
 
 st.set_page_config(
     page_title="Shift Performance",
     page_icon="🏭",
-    layout="wide"
+    layout="wide",
 )
 
 appliquer_style_holcim()
-# Initialiser la base
 initialiser_base()
-
 afficher_header_holcim()
-# Navigation
+
 st.sidebar.title("🏭 Shift Performance")
 
 page = st.sidebar.radio(
@@ -52,21 +38,19 @@ page = st.sidebar.radio(
         "Responsables",
         "Analyse détaillée",
         "Anomalies",
-        "Import PDF"
-    ]
+        "Import PDF",
+    ],
 )
 
 
-# Récupérer les shifts
+# -------------------------------------------------------------------
+# Chargement et préparation des shifts
+# -------------------------------------------------------------------
+
 shifts = afficher_shifts()
-
-
-# Construire le tableau principal
 donnees_shifts = []
 
-
 for shift_base in shifts:
-
     shift_id = shift_base[0]
     date_debut = shift_base[1]
     heure_debut = shift_base[2]
@@ -76,291 +60,140 @@ for shift_base in shifts:
     responsable_l1 = shift_base[6]
     responsable_l2 = shift_base[7]
 
-
-    responsable = (
-        responsable_l2
-        or responsable_l1
-        or "-"
+    responsables_liste = fusionner_responsables(
+        responsable_l1,
+        responsable_l2,
     )
 
+    responsable = ", ".join(responsables_liste) if responsables_liste else "-"
 
-    resultat = calculer_score_shift(
-        shift_id
-    )
-
-
+    resultat = calculer_score_shift(shift_id)
     sections = resultat["sections"]
-
 
     classable = (
         resultat["score_global"] is not None
-        and resultat["couverture"]
-        >= SEUIL_COUVERTURE_CLASSEMENT
+        and resultat["couverture"] >= SEUIL_COUVERTURE_CLASSEMENT
     )
 
+    donnees_shifts.append(
+        {
+            "id": shift_id,
+            "date_debut": date_debut,
+            "heure_debut": heure_debut,
+            "date_fin": date_fin,
+            "heure_fin": heure_fin,
+            "poste": poste,
+            "responsable_l1": responsable_l1,
+            "responsable_l2": responsable_l2,
+            "responsable": responsable,
+            "responsables_liste": responsables_liste,
+            "score_cuisson": sections["cuisson"]["score"],
+            "score_broyeurs": sections["broyeurs"]["score"],
+            "score_environnement": sections["environnement"]["score"],
+            "score_compresseurs": sections["compresseurs"]["score"],
+            "score_global": resultat["score_global"],
+            "couverture": resultat["couverture"],
+            "anomalies": resultat["nombre_anomalies"],
+            "classable": classable,
+        }
+    )
 
-    donnees_shifts.append({
+df_shifts = pd.DataFrame(donnees_shifts)
 
-        "id": shift_id,
-
-        "date_debut": date_debut,
-
-        "heure_debut": heure_debut,
-
-        "date_fin": date_fin,
-
-        "heure_fin": heure_fin,
-
-        "poste": poste,
-
-        "responsable_l1": responsable_l1,
-
-        "responsable_l2": responsable_l2,
-
-        "responsable": responsable,
-
-        "score_cuisson":
-            sections["cuisson"]["score"],
-
-        "score_broyeurs":
-            sections["broyeurs"]["score"],
-
-        "score_environnement":
-            sections["environnement"]["score"],
-
-        "score_compresseurs":
-            sections["compresseurs"]["score"],
-
-        "score_global":
-            resultat["score_global"],
-
-        "couverture":
-            resultat["couverture"],
-
-        "anomalies":
-            resultat["nombre_anomalies"],
-
-        "classable":
-            classable
-    })
+if not df_shifts.empty:
+    df_shifts["date"] = pd.to_datetime(
+        df_shifts["date_debut"],
+        format="%d.%m.%Y",
+    )
+    df_shifts = df_shifts.sort_values(
+        ["date", "heure_debut"],
+        ascending=[False, False],
+    ).reset_index(drop=True)
 
 
-df_shifts = pd.DataFrame(
-    donnees_shifts
-)
+# -------------------------------------------------------------------
+# Anomalies
+# -------------------------------------------------------------------
 
-
-# Récupérer les anomalies
 mesures = recuperer_mesures_pour_analyse()
-
-anomalies = detecter_anomalies(
-    mesures
-)
-
+anomalies = detecter_anomalies(mesures)
 
 if anomalies:
+    df_anomalies = pd.DataFrame(anomalies)
 
-    df_anomalies = pd.DataFrame(
-        anomalies
-    )
-
-    df_anomalies["responsable"] = (
-        df_anomalies["responsable_l2"]
-        .fillna(
-            df_anomalies["responsable_l1"]
+    def preparer_responsables_anomalie(row):
+        responsables = fusionner_responsables(
+            row.get("responsable_l1"),
+            row.get("responsable_l2"),
         )
-        .fillna("-")
+        return responsables
+
+    df_anomalies["responsables_liste"] = df_anomalies.apply(
+        preparer_responsables_anomalie,
+        axis=1,
     )
-
+    df_anomalies["responsable"] = df_anomalies["responsables_liste"].apply(
+        lambda noms: ", ".join(noms) if noms else "-"
+    )
 else:
-
     df_anomalies = pd.DataFrame()
 
 
-# Préparer les dates
-if not df_shifts.empty:
-
-    df_shifts["date"] = pd.to_datetime(
-        df_shifts["date_debut"],
-        format="%d.%m.%Y"
-    )
-
-
-    df_shifts = df_shifts.sort_values(
-        "date",
-        ascending=False
-    )
-
-
+# -------------------------------------------------------------------
 # Vue générale
+# -------------------------------------------------------------------
+
 if page == "Vue générale":
-
     st.title("🏭 Shift Performance Dashboard")
-
-    st.write(
-        "Vue synthétique des performances des shifts."
-    )
-
+    st.write("Vue synthétique des performances des shifts.")
 
     if df_shifts.empty:
-
-        st.info(
-            "Aucun rapport de shift n'a encore été importé."
-        )
-
+        st.info("Aucun rapport de shift n'a encore été importé.")
     else:
+        nombre_shifts = len(df_shifts)
+        nombre_postes = df_shifts["poste"].nunique()
 
-        nombre_shifts = len(
-            df_shifts
-        )
+        responsables_uniques = {
+            nom
+            for liste_responsables in df_shifts["responsables_liste"]
+            for nom in liste_responsables
+        }
+        nombre_responsables = len(responsables_uniques)
+        nombre_classables = int(df_shifts["classable"].sum())
 
-        nombre_postes = df_shifts[
-            "poste"
-        ].nunique()
-
-        nombre_responsables = df_shifts[
-            "responsable"
-        ].nunique()
-
-        nombre_classables = int(
-            df_shifts[
-                "classable"
-            ].sum()
-        )
-
-
-        col1, col2, col3, col4 = st.columns(
-            4
-        )
-
-
-        col1.metric(
-            "Shifts analysés",
-            nombre_shifts
-        )
-
-
-        col2.metric(
-            "Postes",
-            nombre_postes
-        )
-
-
-        col3.metric(
-            "Responsables",
-            nombre_responsables
-        )
-
-
-        col4.metric(
-            "Shifts classables",
-            nombre_classables
-        )
-
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Shifts analysés", nombre_shifts)
+        col2.metric("Postes", nombre_postes)
+        col3.metric("Responsables", nombre_responsables)
+        col4.metric("Shifts classables", nombre_classables)
 
         st.divider()
 
-
-        # Dernier shift
-        st.subheader(
-            "🕒 Dernier shift"
-        )
-
-
+        st.subheader("🕒 Dernier shift")
         dernier_shift = df_shifts.iloc[0]
 
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Date", dernier_shift["date_debut"])
+        col2.metric("Poste", dernier_shift["poste"])
+        col3.metric("Responsable", dernier_shift["responsable"])
 
-        col1, col2, col3, col4 = st.columns(
-            4
-        )
-
-
-        col1.metric(
-            "Date",
-            dernier_shift[
-                "date_debut"
-            ]
-        )
-
-
-        col2.metric(
-            "Poste",
-            dernier_shift[
-                "poste"
-            ]
-        )
-
-
-        col3.metric(
-            "Responsable",
-            dernier_shift[
-                "responsable"
-            ]
-        )
-
-
-        if pd.isna(
-            dernier_shift[
-                "score_global"
-            ]
-        ):
-
+        if pd.isna(dernier_shift["score_global"]):
             score_dernier = "N/A"
-
         else:
+            score_dernier = f'{dernier_shift["score_global"]:.2f} / 100'
 
-            score_dernier = (
-                str(
-                    round(
-                        dernier_shift[
-                            "score_global"
-                        ],
-                        2
-                    )
-                )
-                + " / 100"
-            )
-
-
-        col4.metric(
-            "Score",
-            score_dernier
-        )
-
+        col4.metric("Score", score_dernier)
 
         st.divider()
 
-
-        # Top des shifts
-        st.subheader(
-            "🏆 Meilleurs shifts"
-        )
-
-
-        classement = df_shifts[
-            df_shifts["classable"]
-        ].copy()
-
-
-        classement = classement.sort_values(
-            "score_global",
-            ascending=False
-        )
-
+        st.subheader("🏆 Meilleurs shifts")
+        classement = df_shifts[df_shifts["classable"]].copy()
+        classement = classement.sort_values("score_global", ascending=False)
 
         if classement.empty:
-
-            st.info(
-                "Aucun shift n'est actuellement classable."
-            )
-
+            st.info("Aucun shift n'est actuellement classable.")
         else:
-
-            classement["Rang"] = range(
-                1,
-                len(classement) + 1
-            )
-
+            classement["Rang"] = range(1, len(classement) + 1)
 
             tableau = classement[
                 [
@@ -369,10 +202,9 @@ if page == "Vue générale":
                     "poste",
                     "responsable",
                     "score_global",
-                    "couverture"
+                    "couverture",
                 ]
             ].copy()
-
 
             tableau.columns = [
                 "Rang",
@@ -380,150 +212,93 @@ if page == "Vue générale":
                 "Poste",
                 "Responsable",
                 "Score / 100",
-                "Couverture (%)"
+                "Couverture (%)",
             ]
-
 
             st.dataframe(
                 tableau,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
-
 
         st.divider()
 
-
-        # Alertes
-        st.subheader(
-            "⚠️ Alertes"
-        )
-
+        st.subheader("⚠️ Alertes")
 
         if df_anomalies.empty:
-
-            st.success(
-                "Aucune valeur suspecte détectée."
-            )
-
+            st.success("Aucune valeur suspecte détectée.")
         else:
-
-            st.warning(
-                str(len(df_anomalies))
-                + " valeur(s) suspecte(s) détectée(s)."
-            )
-
+            st.warning(f"{len(df_anomalies)} valeur(s) suspecte(s) détectée(s).")
 
             apercu_anomalies = df_anomalies[
-                [
-                    "date",
-                    "poste",
-                    "equipement",
-                    "kpi",
-                    "valeur"
-                ]
+                ["date", "poste", "equipement", "kpi", "valeur"]
             ].copy()
-
 
             apercu_anomalies.columns = [
                 "Date",
                 "Poste",
                 "Équipement",
                 "KPI",
-                "Valeur"
+                "Valeur",
             ]
-
 
             st.dataframe(
                 apercu_anomalies.head(5),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
 
 
-# Page Shifts
+# -------------------------------------------------------------------
+# Shifts
+# -------------------------------------------------------------------
+
 elif page == "Shifts":
-
-    st.title(
-        "📊 Historique et classement des shifts"
-    )
-
+    st.title("📊 Historique et classement des shifts")
 
     if df_shifts.empty:
-
-        st.info(
-            "Aucun shift disponible."
-        )
-
+        st.info("Aucun shift disponible.")
     else:
-
-        col_filtre1, col_filtre2 = st.columns(
-            2
-        )
-
+        col_filtre1, col_filtre2 = st.columns(2)
 
         postes_disponibles = sorted(
-            df_shifts[
-                "poste"
-            ]
-            .dropna()
-            .unique()
+            df_shifts["poste"].dropna().unique()
         )
-
 
         responsables_disponibles = sorted(
-            df_shifts[
-                "responsable"
-            ]
-            .dropna()
-            .unique()
+            {
+                nom
+                for liste_responsables in df_shifts["responsables_liste"]
+                for nom in liste_responsables
+            }
         )
 
-
-        poste_selectionne = (
-            col_filtre1.selectbox(
-                "Poste",
-                ["Tous"]
-                + postes_disponibles
-            )
+        poste_selectionne = col_filtre1.selectbox(
+            "Poste",
+            ["Tous"] + postes_disponibles,
         )
 
-
-        responsable_selectionne = (
-            col_filtre2.selectbox(
-                "Responsable",
-                ["Tous"]
-                + responsables_disponibles
-            )
+        responsable_selectionne = col_filtre2.selectbox(
+            "Responsable",
+            ["Tous"] + responsables_disponibles,
         )
-
 
         df_filtre = df_shifts.copy()
 
-
         if poste_selectionne != "Tous":
-
             df_filtre = df_filtre[
-                df_filtre["poste"]
-                == poste_selectionne
+                df_filtre["poste"] == poste_selectionne
             ]
-
 
         if responsable_selectionne != "Tous":
-
             df_filtre = df_filtre[
-                df_filtre["responsable"]
-                == responsable_selectionne
+                df_filtre["responsables_liste"].apply(
+                    lambda responsables: responsable_selectionne in responsables
+                )
             ]
 
-
         st.divider()
-
-
-        st.subheader(
-            "📋 Historique"
-        )
-
+        st.subheader("📋 Historique")
 
         historique = df_filtre[
             [
@@ -538,10 +313,9 @@ elif page == "Shifts":
                 "score_global",
                 "couverture",
                 "anomalies",
-                "classable"
+                "classable",
             ]
         ].copy()
-
 
         historique.columns = [
             "Date",
@@ -555,63 +329,36 @@ elif page == "Shifts":
             "Score global",
             "Couverture (%)",
             "Anomalies",
-            "Classable"
+            "Classable",
         ]
-
 
         st.dataframe(
             historique,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
-
 
         st.divider()
+        st.subheader("🏆 Classement")
 
-
-        st.subheader(
-            "🏆 Classement"
-        )
-
-
-        classement = df_filtre[
-            df_filtre["classable"]
-        ].copy()
-
-
-        classement = classement.sort_values(
-            "score_global",
-            ascending=False
-        )
-
+        classement = df_filtre[df_filtre["classable"]].copy()
+        classement = classement.sort_values("score_global", ascending=False)
 
         if classement.empty:
-
-            st.info(
-                "Aucun shift classable avec ces filtres."
-            )
-
+            st.info("Aucun shift classable avec ces filtres.")
         else:
+            classement["Rang"] = range(1, len(classement) + 1)
 
-            classement["Rang"] = range(
-                1,
-                len(classement) + 1
-            )
-
-
-            classement_affichage = (
-                classement[
-                    [
-                        "Rang",
-                        "date_debut",
-                        "poste",
-                        "responsable",
-                        "score_global",
-                        "couverture"
-                    ]
-                ].copy()
-            )
-
+            classement_affichage = classement[
+                [
+                    "Rang",
+                    "date_debut",
+                    "poste",
+                    "responsable",
+                    "score_global",
+                    "couverture",
+                ]
+            ].copy()
 
             classement_affichage.columns = [
                 "Rang",
@@ -619,64 +366,33 @@ elif page == "Shifts":
                 "Poste",
                 "Responsable",
                 "Score / 100",
-                "Couverture (%)"
+                "Couverture (%)",
             ]
-
 
             st.dataframe(
                 classement_affichage,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
 
-
         st.divider()
+        st.subheader("📈 Évolution")
+
+        evolution = df_filtre[["date", "score_global"]].copy()
+        evolution = evolution.sort_values("date").set_index("date")
+        st.line_chart(evolution)
 
 
-        st.subheader(
-            "📈 Évolution"
-        )
+# -------------------------------------------------------------------
+# Comparaison
+# -------------------------------------------------------------------
 
-
-        evolution = df_filtre[
-            [
-                "date",
-                "score_global"
-            ]
-        ].copy()
-
-
-        evolution = evolution.sort_values(
-            "date"
-        )
-
-
-        evolution = evolution.set_index(
-            "date"
-        )
-
-
-        st.line_chart(
-            evolution
-        )
-
-
-# Page comparaison
 elif page == "Comparaison":
-
-    st.title(
-        "⚔️ Comparaison de deux shifts"
-    )
-
+    st.title("⚔️ Comparaison de deux shifts")
 
     if len(df_shifts) < 2:
-
-        st.warning(
-            "Il faut au moins deux shifts."
-        )
-
+        st.warning("Il faut au moins deux shifts.")
     else:
-
         df_shifts["label"] = (
             df_shifts["date_debut"]
             + " "
@@ -687,297 +403,97 @@ elif page == "Comparaison":
             + df_shifts["responsable"]
         )
 
+        labels = df_shifts["label"].tolist()
 
-        labels = df_shifts[
-            "label"
-        ].tolist()
+        col1, col2 = st.columns(2)
+        label_a = col1.selectbox("Shift A", labels, index=0)
+        label_b = col2.selectbox("Shift B", labels, index=1)
 
+        shift_a = df_shifts[df_shifts["label"] == label_a].iloc[0]
+        shift_b = df_shifts[df_shifts["label"] == label_b].iloc[0]
 
-        col1, col2 = st.columns(
-            2
+        col1, col2 = st.columns(2)
+        col1.metric("Score Shift A", f'{shift_a["score_global"]} / 100')
+        col2.metric("Score Shift B", f'{shift_b["score_global"]} / 100')
+
+        comparaison = pd.DataFrame(
+            {
+                "Domaine": [
+                    "Cuisson",
+                    "Broyeurs",
+                    "Environnement",
+                    "Compresseurs",
+                    "Global",
+                ],
+                "Shift A": [
+                    shift_a["score_cuisson"],
+                    shift_a["score_broyeurs"],
+                    shift_a["score_environnement"],
+                    shift_a["score_compresseurs"],
+                    shift_a["score_global"],
+                ],
+                "Shift B": [
+                    shift_b["score_cuisson"],
+                    shift_b["score_broyeurs"],
+                    shift_b["score_environnement"],
+                    shift_b["score_compresseurs"],
+                    shift_b["score_global"],
+                ],
+            }
         )
 
-
-        label_a = col1.selectbox(
-            "Shift A",
-            labels,
-            index=0
-        )
-
-
-        label_b = col2.selectbox(
-            "Shift B",
-            labels,
-            index=1
-        )
-
-
-        shift_a = df_shifts[
-            df_shifts["label"]
-            == label_a
-        ].iloc[0]
-
-
-        shift_b = df_shifts[
-            df_shifts["label"]
-            == label_b
-        ].iloc[0]
-
-
-        col1, col2 = st.columns(
-            2
-        )
-
-
-        col1.metric(
-            "Score Shift A",
-            str(
-                shift_a[
-                    "score_global"
-                ]
-            ) + " / 100"
-        )
-
-
-        col2.metric(
-            "Score Shift B",
-            str(
-                shift_b[
-                    "score_global"
-                ]
-            ) + " / 100"
-        )
-
-
-        comparaison = pd.DataFrame({
-
-            "Domaine": [
-                "Cuisson",
-                "Broyeurs",
-                "Environnement",
-                "Compresseurs",
-                "Global"
-            ],
-
-            "Shift A": [
-                shift_a[
-                    "score_cuisson"
-                ],
-                shift_a[
-                    "score_broyeurs"
-                ],
-                shift_a[
-                    "score_environnement"
-                ],
-                shift_a[
-                    "score_compresseurs"
-                ],
-                shift_a[
-                    "score_global"
-                ]
-            ],
-
-            "Shift B": [
-                shift_b[
-                    "score_cuisson"
-                ],
-                shift_b[
-                    "score_broyeurs"
-                ],
-                shift_b[
-                    "score_environnement"
-                ],
-                shift_b[
-                    "score_compresseurs"
-                ],
-                shift_b[
-                    "score_global"
-                ]
-            ]
-        })
-
-
-        st.subheader(
-            "Comparaison par domaine"
-        )
-
+        st.subheader("Comparaison par domaine")
 
         st.dataframe(
             comparaison,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
+        st.bar_chart(comparaison.set_index("Domaine"))
 
-        st.bar_chart(
-            comparaison.set_index(
-                "Domaine"
-            )
-        )
+        st.subheader("Qualité des données")
 
+        col1, col2 = st.columns(2)
+        col1.metric("Couverture A", f'{shift_a["couverture"]}%')
+        col2.metric("Couverture B", f'{shift_b["couverture"]}%')
 
-        st.subheader(
-            "Qualité des données"
-        )
+        col1, col2 = st.columns(2)
+        col1.metric("Anomalies A", int(shift_a["anomalies"]))
+        col2.metric("Anomalies B", int(shift_b["anomalies"]))
 
+        if not shift_a["classable"]:
+            st.warning("Le Shift A n'est pas classable.")
 
-        col1, col2 = st.columns(
-            2
-        )
-
-
-        col1.metric(
-            "Couverture A",
-            str(
-                shift_a[
-                    "couverture"
-                ]
-            ) + "%"
-        )
+        if not shift_b["classable"]:
+            st.warning("Le Shift B n'est pas classable.")
 
 
-        col2.metric(
-            "Couverture B",
-            str(
-                shift_b[
-                    "couverture"
-                ]
-            ) + "%"
-        )
+# -------------------------------------------------------------------
+# Postes
+# -------------------------------------------------------------------
 
-
-        col1, col2 = st.columns(
-            2
-        )
-
-
-        col1.metric(
-            "Anomalies A",
-            int(
-                shift_a[
-                    "anomalies"
-                ]
-            )
-        )
-
-
-        col2.metric(
-            "Anomalies B",
-            int(
-                shift_b[
-                    "anomalies"
-                ]
-            )
-        )
-
-
-        if not shift_a[
-            "classable"
-        ]:
-
-            st.warning(
-                "Le Shift A n'est pas classable."
-            )
-
-
-        if not shift_b[
-            "classable"
-        ]:
-
-            st.warning(
-                "Le Shift B n'est pas classable."
-            )
-
-
-# Page Postes
 elif page == "Postes":
-
-    st.title(
-        "🏭 Comparaison des postes"
-    )
-
+    st.title("🏭 Comparaison des postes")
 
     if df_shifts.empty:
-
-        st.info(
-            "Aucune donnée disponible."
-        )
-
+        st.info("Aucune donnée disponible.")
     else:
-
         donnees_postes = []
-
-
-        postes = sorted(
-            df_shifts[
-                "poste"
-            ]
-            .dropna()
-            .unique()
-        )
-
+        postes = sorted(df_shifts["poste"].dropna().unique())
 
         for poste in postes:
+            df_poste = df_shifts[df_shifts["poste"] == poste]
+            df_classable = df_poste[df_poste["classable"]]
 
-            df_poste = df_shifts[
-                df_shifts["poste"]
-                == poste
-            ]
-
-
-            df_classable = df_poste[
-                df_poste["classable"]
-            ]
-
-
-            if len(
-                df_classable
-            ) > 0:
-
-                score_moyen = (
-                    df_classable[
-                        "score_global"
-                    ].mean()
-                )
-
-
-                meilleur_score = (
-                    df_classable[
-                        "score_global"
-                    ].max()
-                )
-
-
-                cuisson = (
-                    df_classable[
-                        "score_cuisson"
-                    ].mean()
-                )
-
-
-                broyeurs = (
-                    df_classable[
-                        "score_broyeurs"
-                    ].mean()
-                )
-
-
-                environnement = (
-                    df_classable[
-                        "score_environnement"
-                    ].mean()
-                )
-
-
-                compresseurs = (
-                    df_classable[
-                        "score_compresseurs"
-                    ].mean()
-                )
-
-
+            if not df_classable.empty:
+                score_moyen = df_classable["score_global"].mean()
+                meilleur_score = df_classable["score_global"].max()
+                cuisson = df_classable["score_cuisson"].mean()
+                broyeurs = df_classable["score_broyeurs"].mean()
+                environnement = df_classable["score_environnement"].mean()
+                compresseurs = df_classable["score_compresseurs"].mean()
             else:
-
                 score_moyen = None
                 meilleur_score = None
                 cuisson = None
@@ -985,73 +501,31 @@ elif page == "Postes":
                 environnement = None
                 compresseurs = None
 
+            donnees_postes.append(
+                {
+                    "Poste": poste,
+                    "Shifts total": len(df_poste),
+                    "Shifts classables": len(df_classable),
+                    "Score moyen": score_moyen,
+                    "Meilleur score": meilleur_score,
+                    "Cuisson": cuisson,
+                    "Broyeurs": broyeurs,
+                    "Environnement": environnement,
+                    "Compresseurs": compresseurs,
+                    "Couverture moyenne": df_poste["couverture"].mean(),
+                    "Anomalies moyennes": df_poste["anomalies"].mean(),
+                }
+            )
 
-            donnees_postes.append({
-
-                "Poste": poste,
-
-                "Shifts total":
-                    len(df_poste),
-
-                "Shifts classables":
-                    len(df_classable),
-
-                "Score moyen":
-                    score_moyen,
-
-                "Meilleur score":
-                    meilleur_score,
-
-                "Cuisson":
-                    cuisson,
-
-                "Broyeurs":
-                    broyeurs,
-
-                "Environnement":
-                    environnement,
-
-                "Compresseurs":
-                    compresseurs,
-
-                "Couverture moyenne":
-                    df_poste[
-                        "couverture"
-                    ].mean(),
-
-                "Anomalies moyennes":
-                    df_poste[
-                        "anomalies"
-                    ].mean()
-            })
-
-
-        df_postes = pd.DataFrame(
-            donnees_postes
-        )
-
-
+        df_postes = pd.DataFrame(donnees_postes)
         df_postes = df_postes.sort_values(
             "Score moyen",
-            ascending=False
-        )
+            ascending=False,
+            na_position="last",
+        ).reset_index(drop=True)
+        df_postes["Rang"] = range(1, len(df_postes) + 1)
 
-
-        df_postes = df_postes.reset_index(
-            drop=True
-        )
-
-
-        df_postes["Rang"] = range(
-            1,
-            len(df_postes) + 1
-        )
-
-
-        st.subheader(
-            "🏆 Classement des postes"
-        )
-
+        st.subheader("🏆 Classement des postes")
 
         st.dataframe(
             df_postes[
@@ -1063,35 +537,22 @@ elif page == "Postes":
                     "Score moyen",
                     "Meilleur score",
                     "Couverture moyenne",
-                    "Anomalies moyennes"
+                    "Anomalies moyennes",
                 ]
             ],
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
-
-        st.subheader(
-            "Score moyen par poste"
-        )
-
+        st.subheader("Score moyen par poste")
 
         st.bar_chart(
             df_postes[
-                [
-                    "Poste",
-                    "Score moyen"
-                ]
-            ].set_index(
-                "Poste"
-            )
+                ["Poste", "Score moyen"]
+            ].set_index("Poste")
         )
 
-
-        st.subheader(
-            "Performance par domaine"
-        )
-
+        st.subheader("Performance par domaine")
 
         st.bar_chart(
             df_postes[
@@ -1100,142 +561,69 @@ elif page == "Postes":
                     "Cuisson",
                     "Broyeurs",
                     "Environnement",
-                    "Compresseurs"
+                    "Compresseurs",
                 ]
-            ].set_index(
-                "Poste"
-            )
+            ].set_index("Poste")
         )
 
+        st.subheader("Évolution dans le temps")
 
-        st.subheader(
-            "Évolution dans le temps"
-        )
-
-
-        evolution = df_shifts[
-            df_shifts["classable"]
-        ][
-            [
-                "date",
-                "poste",
-                "score_global"
-            ]
+        evolution = df_shifts[df_shifts["classable"]][
+            ["date", "poste", "score_global"]
         ]
-
 
         evolution = evolution.pivot_table(
             index="date",
             columns="poste",
             values="score_global",
-            aggfunc="mean"
+            aggfunc="mean",
         )
 
-
-        st.line_chart(
-            evolution
-        )
-
+        st.line_chart(evolution)
 
         st.caption(
-            "Le nombre de shifts disponibles par poste "
-            "doit être pris en compte lors de l'interprétation."
+            "Le nombre de shifts disponibles par poste doit être pris en compte "
+            "lors de l'interprétation."
         )
 
 
-# Page Responsables
+# -------------------------------------------------------------------
+# Responsables
+# -------------------------------------------------------------------
+
 elif page == "Responsables":
-
-    st.title(
-        "👷 Comparaison des responsables"
-    )
-
+    st.title("👷 Comparaison des responsables")
 
     if df_shifts.empty:
-
-        st.info(
-            "Aucune donnée disponible."
-        )
-
+        st.info("Aucune donnée disponible.")
     else:
-
         donnees_responsables = []
 
-
         responsables = sorted(
-            df_shifts[
-                "responsable"
-            ]
-            .dropna()
-            .unique()
+            {
+                nom
+                for liste_responsables in df_shifts["responsables_liste"]
+                for nom in liste_responsables
+            }
         )
 
-
         for responsable in responsables:
-
             df_responsable = df_shifts[
-                df_shifts[
-                    "responsable"
-                ]
-                == responsable
+                df_shifts["responsables_liste"].apply(
+                    lambda liste: responsable in liste
+                )
             ]
 
+            df_classable = df_responsable[df_responsable["classable"]]
 
-            df_classable = df_responsable[
-                df_responsable[
-                    "classable"
-                ]
-            ]
-
-
-            if len(
-                df_classable
-            ) > 0:
-
-                score_moyen = (
-                    df_classable[
-                        "score_global"
-                    ].mean()
-                )
-
-
-                meilleur_score = (
-                    df_classable[
-                        "score_global"
-                    ].max()
-                )
-
-
-                cuisson = (
-                    df_classable[
-                        "score_cuisson"
-                    ].mean()
-                )
-
-
-                broyeurs = (
-                    df_classable[
-                        "score_broyeurs"
-                    ].mean()
-                )
-
-
-                environnement = (
-                    df_classable[
-                        "score_environnement"
-                    ].mean()
-                )
-
-
-                compresseurs = (
-                    df_classable[
-                        "score_compresseurs"
-                    ].mean()
-                )
-
-
+            if not df_classable.empty:
+                score_moyen = df_classable["score_global"].mean()
+                meilleur_score = df_classable["score_global"].max()
+                cuisson = df_classable["score_cuisson"].mean()
+                broyeurs = df_classable["score_broyeurs"].mean()
+                environnement = df_classable["score_environnement"].mean()
+                compresseurs = df_classable["score_compresseurs"].mean()
             else:
-
                 score_moyen = None
                 meilleur_score = None
                 cuisson = None
@@ -1243,193 +631,114 @@ elif page == "Responsables":
                 environnement = None
                 compresseurs = None
 
+            donnees_responsables.append(
+                {
+                    "Responsable": responsable,
+                    "Shifts total": len(df_responsable),
+                    "Shifts classables": len(df_classable),
+                    "Score moyen": score_moyen,
+                    "Meilleur score": meilleur_score,
+                    "Cuisson": cuisson,
+                    "Broyeurs": broyeurs,
+                    "Environnement": environnement,
+                    "Compresseurs": compresseurs,
+                    "Couverture moyenne": df_responsable["couverture"].mean(),
+                    "Anomalies moyennes": df_responsable["anomalies"].mean(),
+                }
+            )
 
-            donnees_responsables.append({
+        df_responsables = pd.DataFrame(donnees_responsables)
 
-                "Responsable":
-                    responsable,
-
-                "Shifts total":
-                    len(
-                        df_responsable
-                    ),
-
-                "Shifts classables":
-                    len(
-                        df_classable
-                    ),
-
-                "Score moyen":
-                    score_moyen,
-
-                "Meilleur score":
-                    meilleur_score,
-
-                "Cuisson":
-                    cuisson,
-
-                "Broyeurs":
-                    broyeurs,
-
-                "Environnement":
-                    environnement,
-
-                "Compresseurs":
-                    compresseurs,
-
-                "Couverture moyenne":
-                    df_responsable[
-                        "couverture"
-                    ].mean(),
-
-                "Anomalies moyennes":
-                    df_responsable[
-                        "anomalies"
-                    ].mean()
-            })
-
-
-        df_responsables = pd.DataFrame(
-            donnees_responsables
-        )
-
-
-        df_responsables = (
-            df_responsables
-            .sort_values(
+        if df_responsables.empty:
+            st.info("Aucun responsable disponible.")
+        else:
+            df_responsables = df_responsables.sort_values(
                 "Score moyen",
-                ascending=False
+                ascending=False,
+                na_position="last",
+            ).reset_index(drop=True)
+
+            df_responsables["Rang"] = range(1, len(df_responsables) + 1)
+
+            st.subheader("🏆 Classement")
+
+            st.dataframe(
+                df_responsables[
+                    [
+                        "Rang",
+                        "Responsable",
+                        "Shifts total",
+                        "Shifts classables",
+                        "Score moyen",
+                        "Meilleur score",
+                        "Couverture moyenne",
+                        "Anomalies moyennes",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
             )
-            .reset_index(
-                drop=True
+
+            st.subheader("Score moyen")
+
+            st.bar_chart(
+                df_responsables[
+                    ["Responsable", "Score moyen"]
+                ].set_index("Responsable")
             )
-        )
 
+            st.subheader("Performance par domaine")
 
-        df_responsables[
-            "Rang"
-        ] = range(
-            1,
-            len(
-                df_responsables
-            ) + 1
-        )
-
-
-        st.subheader(
-            "🏆 Classement"
-        )
-
-
-        st.dataframe(
-            df_responsables[
-                [
-                    "Rang",
-                    "Responsable",
-                    "Shifts total",
-                    "Shifts classables",
-                    "Score moyen",
-                    "Meilleur score",
-                    "Couverture moyenne",
-                    "Anomalies moyennes"
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-        st.subheader(
-            "Score moyen"
-        )
-
-
-        st.bar_chart(
-            df_responsables[
-                [
-                    "Responsable",
-                    "Score moyen"
-                ]
-            ].set_index(
-                "Responsable"
+            st.bar_chart(
+                df_responsables[
+                    [
+                        "Responsable",
+                        "Cuisson",
+                        "Broyeurs",
+                        "Environnement",
+                        "Compresseurs",
+                    ]
+                ].set_index("Responsable")
             )
-        )
 
+            st.subheader("Évolution dans le temps")
 
-        st.subheader(
-            "Performance par domaine"
-        )
+            evolution = df_shifts[df_shifts["classable"]][
+                ["date", "responsables_liste", "score_global"]
+            ].copy()
 
-
-        st.bar_chart(
-            df_responsables[
-                [
-                    "Responsable",
-                    "Cuisson",
-                    "Broyeurs",
-                    "Environnement",
-                    "Compresseurs"
-                ]
-            ].set_index(
-                "Responsable"
+            evolution = evolution.explode("responsables_liste")
+            evolution = evolution.rename(
+                columns={"responsables_liste": "responsable"}
             )
-        )
+            evolution = evolution.dropna(subset=["responsable"])
+
+            evolution = evolution.pivot_table(
+                index="date",
+                columns="responsable",
+                values="score_global",
+                aggfunc="mean",
+            )
+
+            st.line_chart(evolution)
+
+            st.caption(
+                "Les résultats doivent être interprétés avec prudence lorsque "
+                "peu de shifts sont disponibles."
+            )
 
 
-        st.subheader(
-            "Évolution dans le temps"
-        )
+# -------------------------------------------------------------------
+# Analyse détaillée
+# -------------------------------------------------------------------
 
-
-        evolution = df_shifts[
-            df_shifts["classable"]
-        ][
-            [
-                "date",
-                "responsable",
-                "score_global"
-            ]
-        ]
-
-
-        evolution = evolution.pivot_table(
-            index="date",
-            columns="responsable",
-            values="score_global",
-            aggfunc="mean"
-        )
-
-
-        st.line_chart(
-            evolution
-        )
-
-
-        st.caption(
-            "Les résultats doivent être interprétés "
-            "avec prudence lorsque peu de shifts sont disponibles."
-        )
-
-
-# Page Analyse détaillée
 elif page == "Analyse détaillée":
-
-    st.title(
-        "🔬 Analyse détaillée d'un shift"
-    )
-
+    st.title("🔬 Analyse détaillée d'un shift")
 
     if df_shifts.empty:
-
-        st.info(
-            "Aucun shift disponible."
-        )
-
+        st.info("Aucun shift disponible.")
     else:
-
-        df_shifts[
-            "label_detail"
-        ] = (
+        df_shifts["label_detail"] = (
             df_shifts["date_debut"]
             + " "
             + df_shifts["heure_debut"]
@@ -1439,231 +748,162 @@ elif page == "Analyse détaillée":
             + df_shifts["responsable"]
         )
 
-
         label = st.selectbox(
             "Shift à analyser",
-            df_shifts[
-                "label_detail"
-            ].tolist()
+            df_shifts["label_detail"].tolist(),
         )
-
 
         shift = df_shifts[
-            df_shifts[
-                "label_detail"
-            ]
-            == label
+            df_shifts["label_detail"] == label
         ].iloc[0]
 
+        shift_id = int(shift["id"])
 
-        shift_id = int(
-            shift["id"]
+        st.subheader("Responsables du shift")
+
+        responsable_l1_actuel = (
+            shift["responsable_l1"]
+            if pd.notna(shift["responsable_l1"])
+            else ""
         )
 
-
-        resultat = calculer_score_shift(
-            shift_id
+        responsable_l2_actuel = (
+            shift["responsable_l2"]
+            if pd.notna(shift["responsable_l2"])
+            else ""
         )
 
-
-        details = obtenir_details_score_shift(
-            shift_id
+        st.caption(
+            "Vous pouvez corriger les noms. Si plusieurs personnes sont "
+            "réellement présentes, séparez-les par une virgule."
         )
 
+        col_l1, col_l2 = st.columns(2)
 
-        col1, col2, col3, col4 = st.columns(
-            4
+        nouveau_l1 = col_l1.text_input(
+            "Responsable L1",
+            value=responsable_l1_actuel,
         )
 
-
-        col1.metric(
-            "Score global",
-            str(
-                resultat[
-                    "score_global"
-                ]
-            ) + " / 100"
+        nouveau_l2 = col_l2.text_input(
+            "Responsable L2",
+            value=responsable_l2_actuel,
         )
 
+        if st.button("Enregistrer les responsables"):
+            nouveau_l1 = normaliser_responsables(nouveau_l1)
+            nouveau_l2 = normaliser_responsables(nouveau_l2)
 
-        col2.metric(
-            "Couverture",
-            str(
-                resultat[
-                    "couverture"
-                ]
-            ) + "%"
-        )
-
-
-        col3.metric(
-            "Anomalies",
-            resultat[
-                "nombre_anomalies"
-            ]
-        )
-
-
-        statut = (
-            "Classable"
-            if shift["classable"]
-            else "Non classable"
-        )
-
-
-        col4.metric(
-            "Statut",
-            statut
-        )
-
-
-        if not shift[
-            "classable"
-        ]:
-
-            st.warning(
-                "Ce shift possède une couverture "
-                "insuffisante pour participer au classement."
+            modifier_responsables_shift(
+                shift_id,
+                nouveau_l1,
+                nouveau_l2,
             )
 
+            st.success("Les responsables ont été mis à jour.")
+            st.rerun()
 
         st.divider()
 
+        resultat = calculer_score_shift(shift_id)
+        details = obtenir_details_score_shift(shift_id)
 
-        st.subheader(
-            "Scores par domaine"
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Score global", f'{resultat["score_global"]} / 100')
+        col2.metric("Couverture", f'{resultat["couverture"]}%')
+        col3.metric("Anomalies", resultat["nombre_anomalies"])
+
+        statut = "Classable" if shift["classable"] else "Non classable"
+        col4.metric("Statut", statut)
+
+        if not shift["classable"]:
+            st.warning(
+                "Ce shift possède une couverture insuffisante pour participer "
+                "au classement."
+            )
+
+        st.divider()
+        st.subheader("Scores par domaine")
+
+        sections = resultat["sections"]
+
+        df_sections = pd.DataFrame(
+            {
+                "Domaine": [
+                    "Cuisson",
+                    "Broyeurs",
+                    "Environnement",
+                    "Compresseurs",
+                ],
+                "Score": [
+                    sections["cuisson"]["score"],
+                    sections["broyeurs"]["score"],
+                    sections["environnement"]["score"],
+                    sections["compresseurs"]["score"],
+                ],
+                "Couverture (%)": [
+                    sections["cuisson"]["couverture"],
+                    sections["broyeurs"]["couverture"],
+                    sections["environnement"]["couverture"],
+                    sections["compresseurs"]["couverture"],
+                ],
+            }
         )
-
-
-        sections = resultat[
-            "sections"
-        ]
-
-
-        df_sections = pd.DataFrame({
-
-            "Domaine": [
-                "Cuisson",
-                "Broyeurs",
-                "Environnement",
-                "Compresseurs"
-            ],
-
-            "Score": [
-                sections[
-                    "cuisson"
-                ]["score"],
-
-                sections[
-                    "broyeurs"
-                ]["score"],
-
-                sections[
-                    "environnement"
-                ]["score"],
-
-                sections[
-                    "compresseurs"
-                ]["score"]
-            ],
-
-            "Couverture (%)": [
-                sections[
-                    "cuisson"
-                ]["couverture"],
-
-                sections[
-                    "broyeurs"
-                ]["couverture"],
-
-                sections[
-                    "environnement"
-                ]["couverture"],
-
-                sections[
-                    "compresseurs"
-                ]["couverture"]
-            ]
-        })
-
 
         st.dataframe(
             df_sections,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
-
 
         st.bar_chart(
             df_sections[
+                ["Domaine", "Score"]
+            ].set_index("Domaine")
+        )
+
+        st.divider()
+        st.subheader("Détail du scoring")
+
+        df_details = pd.DataFrame(details)
+
+        if not df_details.empty:
+            df_details = df_details[
                 [
-                    "Domaine",
-                    "Score"
+                    "section",
+                    "equipement",
+                    "produit",
+                    "kpi",
+                    "valeur",
+                    "poids",
+                    "score",
+                    "statut",
                 ]
-            ].set_index(
-                "Domaine"
-            )
-        )
-
-
-        st.divider()
-
-
-        st.subheader(
-            "Détail du scoring"
-        )
-
-
-        df_details = pd.DataFrame(
-            details
-        )
-
-
-        df_details = df_details[
-            [
-                "section",
-                "equipement",
-                "produit",
-                "kpi",
-                "valeur",
-                "poids",
-                "score",
-                "statut"
             ]
-        ]
 
+            df_details.columns = [
+                "Section",
+                "Équipement",
+                "Produit",
+                "KPI",
+                "Valeur",
+                "Poids",
+                "Score / 100",
+                "Statut",
+            ]
 
-        df_details.columns = [
-            "Section",
-            "Équipement",
-            "Produit",
-            "KPI",
-            "Valeur",
-            "Poids",
-            "Score / 100",
-            "Statut"
-        ]
-
-
-        st.dataframe(
-            df_details,
-            use_container_width=True,
-            hide_index=True
-        )
-
+            st.dataframe(
+                df_details,
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("Aucun détail de scoring disponible.")
 
         st.divider()
+        st.subheader("Données brutes")
 
-
-        st.subheader(
-            "Données brutes"
-        )
-
-
-        mesures_shift = afficher_mesures_shift(
-            shift_id
-        )
-
+        mesures_shift = afficher_mesures_shift(shift_id)
 
         df_mesures = pd.DataFrame(
             mesures_shift,
@@ -1672,50 +912,29 @@ elif page == "Analyse détaillée":
                 "Équipement",
                 "Produit",
                 "KPI",
-                "Valeur"
-            ]
+                "Valeur",
+            ],
         )
-
 
         st.dataframe(
             df_mesures,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
-
 
         st.divider()
-
-
-        st.subheader(
-            "Valeurs suspectes du shift"
-        )
-
+        st.subheader("Valeurs suspectes du shift")
 
         anomalies_shift = [
-
             anomalie
-
             for anomalie in anomalies
-
-            if anomalie[
-                "shift_id"
-            ] == shift_id
+            if anomalie["shift_id"] == shift_id
         ]
 
-
         if not anomalies_shift:
-
-            st.success(
-                "Aucune valeur suspecte."
-            )
-
+            st.success("Aucune valeur suspecte.")
         else:
-
-            df_anomalies_shift = pd.DataFrame(
-                anomalies_shift
-            )
-
+            df_anomalies_shift = pd.DataFrame(anomalies_shift)
 
             st.dataframe(
                 df_anomalies_shift[
@@ -1726,117 +945,80 @@ elif page == "Analyse détaillée":
                         "kpi",
                         "valeur",
                         "mediane",
-                        "score_anomalie"
+                        "score_anomalie",
                     ]
                 ],
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
             )
 
 
-# Page Anomalies
+# -------------------------------------------------------------------
+# Anomalies
+# -------------------------------------------------------------------
+
 elif page == "Anomalies":
-
-    st.title(
-        "⚠️ Valeurs suspectes"
-    )
-
+    st.title("⚠️ Valeurs suspectes")
 
     st.write(
-        "Les valeurs présentées ici sont statistiquement "
-        "inhabituelles et nécessitent une vérification."
+        "Les valeurs présentées ici sont statistiquement inhabituelles "
+        "et nécessitent une vérification."
     )
 
-
     if df_anomalies.empty:
-
-        st.success(
-            "Aucune valeur suspecte détectée."
-        )
-
+        st.success("Aucune valeur suspecte détectée.")
     else:
-
-        col1, col2, col3 = st.columns(
-            3
-        )
-
+        col1, col2, col3 = st.columns(3)
 
         postes = sorted(
-            df_anomalies[
-                "poste"
-            ]
-            .dropna()
-            .unique()
+            df_anomalies["poste"].dropna().unique()
         )
-
 
         responsables = sorted(
-            df_anomalies[
-                "responsable"
-            ]
-            .dropna()
-            .unique()
+            {
+                nom
+                for liste_responsables in df_anomalies["responsables_liste"]
+                for nom in liste_responsables
+            }
         )
-
 
         sections = sorted(
-            df_anomalies[
-                "section"
-            ]
-            .dropna()
-            .unique()
+            df_anomalies["section"].dropna().unique()
         )
-
 
         filtre_poste = col1.selectbox(
             "Poste",
-            ["Tous"] + postes
+            ["Tous"] + postes,
         )
-
 
         filtre_responsable = col2.selectbox(
             "Responsable",
-            ["Tous"] + responsables
+            ["Tous"] + responsables,
         )
-
 
         filtre_section = col3.selectbox(
             "Section",
-            ["Toutes"] + sections
+            ["Toutes"] + sections,
         )
-
 
         df_filtre = df_anomalies.copy()
 
-
         if filtre_poste != "Tous":
-
             df_filtre = df_filtre[
-                df_filtre[
-                    "poste"
-                ] == filtre_poste
+                df_filtre["poste"] == filtre_poste
             ]
-
 
         if filtre_responsable != "Tous":
-
             df_filtre = df_filtre[
-                df_filtre[
-                    "responsable"
-                ]
-                == filtre_responsable
+                df_filtre["responsables_liste"].apply(
+                    lambda liste: filtre_responsable in liste
+                )
             ]
-
 
         if filtre_section != "Toutes":
-
             df_filtre = df_filtre[
-                df_filtre[
-                    "section"
-                ]
-                == filtre_section
+                df_filtre["section"] == filtre_section
             ]
-
 
         affichage = df_filtre[
             [
@@ -1849,10 +1031,9 @@ elif page == "Anomalies":
                 "kpi",
                 "valeur",
                 "mediane",
-                "score_anomalie"
+                "score_anomalie",
             ]
         ].copy()
-
 
         affichage.columns = [
             "Date",
@@ -1864,155 +1045,75 @@ elif page == "Anomalies":
             "KPI",
             "Valeur",
             "Médiane",
-            "Score anomalie"
+            "Score anomalie",
         ]
-
 
         st.dataframe(
             affichage,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
 
-# Page Import PDF
+# -------------------------------------------------------------------
+# Import PDF
+# -------------------------------------------------------------------
+
 elif page == "Import PDF":
-
-    st.title(
-        "📥 Importer un rapport de shift"
-    )
-
-
-    st.write(
-        "Ajoutez un Tracking Shift Report au format PDF."
-    )
-
+    st.title("📥 Importer un rapport de shift")
+    st.write("Ajoutez un Tracking Shift Report au format PDF.")
 
     if "message_import" in st.session_state:
-
-        type_message = st.session_state[
-            "message_import"
-        ][0]
-
-        message = st.session_state[
-            "message_import"
-        ][1]
-
+        type_message, message = st.session_state["message_import"]
 
         if type_message == "success":
-
-            st.success(
-                message
-            )
-
+            st.success(message)
         else:
+            st.warning(message)
 
-            st.warning(
-                message
-            )
-
-
-        del st.session_state[
-            "message_import"
-        ]
-
+        del st.session_state["message_import"]
 
     fichier_pdf = st.file_uploader(
         "Sélectionner un fichier PDF",
-        type=["pdf"]
+        type=["pdf"],
     )
 
-
     if fichier_pdf is not None:
+        st.write("Fichier sélectionné :", fichier_pdf.name)
 
-        st.write(
-            "Fichier sélectionné :",
-            fichier_pdf.name
-        )
-
-
-        if st.button(
-            "Analyser et importer"
-        ):
-
+        if st.button("Analyser et importer"):
             try:
-
-                with st.spinner(
-                    "Analyse du rapport..."
-                ):
-
-                    (
-                        shift_id,
-                        est_nouveau,
-                        shift_importe
-                    ) = importer_pdf_bytes(
+                with st.spinner("Analyse du rapport..."):
+                    shift_id, est_nouveau, shift_importe = importer_pdf_bytes(
                         fichier_pdf.getvalue()
                     )
 
-
                 if est_nouveau:
-
-                    st.session_state[
-                        "message_import"
-                    ] = (
+                    st.session_state["message_import"] = (
                         "success",
                         "Rapport importé avec succès : "
-                        + shift_importe[
-                            "date_debut"
-                        ]
-                        + " | "
-                        + shift_importe[
-                            "poste"
-                        ]
+                        f'{shift_importe["date_debut"]} | '
+                        f'{shift_importe["poste"]}',
                     )
-
-
                 else:
-
-                    st.session_state[
-                        "message_import"
-                    ] = (
+                    st.session_state["message_import"] = (
                         "warning",
-                        "Ce shift est déjà présent "
-                        "dans la base (ID "
-                        + str(
-                            shift_id
-                        )
-                        + ")."
+                        f"Ce shift est déjà présent dans la base (ID {shift_id}).",
                     )
-
 
                 st.rerun()
 
-
             except ValueError as erreur:
-
-                st.error(
-                    str(
-                        erreur
-                    )
-                )
-
+                st.error(str(erreur))
 
             except Exception as erreur:
-
-                st.error(
-                    "Une erreur inattendue est survenue."
-                )
-
-                st.error(
-                    str(
-                        erreur
-                    )
-                )
+                st.error("Une erreur inattendue est survenue.")
+                st.error(str(erreur))
 
 
 st.sidebar.divider()
-
 st.sidebar.caption(
-    "Scoring V1 - seuil de couverture : "
-    + str(
-        SEUIL_COUVERTURE_CLASSEMENT
-    )
-    + "%"
+    f"Scoring V1 - seuil de couverture : {SEUIL_COUVERTURE_CLASSEMENT}%"
 )
+
+afficher_footer()
