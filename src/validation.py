@@ -1,13 +1,13 @@
 from statistics import median
 
+from src.database import recuperer_decisions_anomalies
+
 
 def detecter_anomalies(mesures):
-
     groupes = {}
+    decisions = recuperer_decisions_anomalies()
 
-    # Regrouper les mêmes KPI ensemble
     for mesure in mesures:
-
         (
             shift_id,
             date_debut,
@@ -18,75 +18,50 @@ def detecter_anomalies(mesures):
             equipement,
             produit,
             kpi,
-            valeur
+            valeur,
         ) = mesure
-
 
         cle = (
             section,
             equipement,
             produit,
-            kpi
+            kpi,
         )
-
 
         if cle not in groupes:
             groupes[cle] = []
 
-
         groupes[cle].append(mesure)
-
 
     anomalies = []
 
-
-    # Analyser chaque groupe de KPI
-    for cle, lignes in groupes.items():
-
-        # Il faut suffisamment de valeurs
-        if len(lignes) < 5:
-            continue
-
-
+    for lignes in groupes.values():
         valeurs = [
             ligne[9]
             for ligne in lignes
             if ligne[9] is not None
         ]
 
-
         if len(valeurs) < 5:
             continue
 
-
-        # Valeur centrale
         valeur_mediane = median(valeurs)
 
-
-        # Calculer les écarts à la médiane
         ecarts = [
             abs(valeur - valeur_mediane)
             for valeur in valeurs
         ]
 
-
         ecart_median = median(ecarts)
 
-
-        # Impossible de calculer un score fiable
-        # si toutes les valeurs sont identiques
         if ecart_median == 0:
             continue
 
-
-        # Tester chaque mesure
         for ligne in lignes:
-
             valeur = ligne[9]
 
             if valeur is None:
                 continue
-
 
             score_anomalie = (
                 0.6745
@@ -94,18 +69,32 @@ def detecter_anomalies(mesures):
                 / ecart_median
             )
 
-
             if valeur_mediane == 0:
                 ecart_relatif = 0
-
             else:
-                ecart_relatif = (abs(valeur - valeur_mediane)/ abs(valeur_mediane)
+                ecart_relatif = (
+                    abs(valeur - valeur_mediane)
+                    / abs(valeur_mediane)
+                )
+
+            if score_anomalie <= 3.5 or ecart_relatif <= 0.20:
+                continue
+
+            cle_decision = (
+                ligne[0],
+                ligne[5],
+                ligne[6],
+                ligne[7],
+                ligne[8],
             )
 
-            if (
-                score_anomalie > 3.5 and ecart_relatif > 0.20):
+            decision = decisions.get(
+                cle_decision,
+                "a_verifier",
+            )
 
-                anomalie = {
+            anomalies.append(
+                {
                     "shift_id": ligne[0],
                     "date": ligne[1],
                     "poste": ligne[2],
@@ -117,8 +106,9 @@ def detecter_anomalies(mesures):
                     "kpi": ligne[8],
                     "valeur": ligne[9],
                     "mediane": valeur_mediane,
-                    "score_anomalie": round(score_anomalie,2)
+                    "score_anomalie": round(score_anomalie, 2),
+                    "decision": decision,
                 }
+            )
 
-                anomalies.append(anomalie)
-    return anomalies
+    return anomalies 

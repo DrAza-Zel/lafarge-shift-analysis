@@ -91,6 +91,9 @@ def calculer_score_shift(shift_id):
         if anomalie["shift_id"] != shift_id:
             continue
 
+        if anomalie.get("decision", "a_verifier") == "acceptee":
+            continue
+
         nombre_anomalies += 1
 
         cles_anomalies.add(
@@ -338,17 +341,24 @@ def obtenir_details_score_shift(shift_id):
     objectifs_kpi = charger_objectifs_kpi()
 
     cles_anomalies = set()
+    decisions_anomalies = {}
 
     for anomalie in anomalies:
-        if anomalie["shift_id"] == shift_id:
-            cles_anomalies.add(
-                (
-                    anomalie["section"],
-                    anomalie["equipement"],
-                    anomalie["produit"],
-                    anomalie["kpi"],
-                )
-            )
+        if anomalie["shift_id"] != shift_id:
+            continue
+
+        cle_anomalie = (
+            anomalie["section"],
+            anomalie["equipement"],
+            anomalie["produit"],
+            anomalie["kpi"],
+        )
+
+        decision = anomalie.get("decision", "a_verifier")
+        decisions_anomalies[cle_anomalie] = decision
+
+        if decision != "acceptee":
+            cles_anomalies.add(cle_anomalie)
 
     valeurs_shift = {}
 
@@ -425,7 +435,12 @@ def obtenir_details_score_shift(shift_id):
             configuration,
         )
 
-        statut = "Utilisé" if score is not None else "Non calculable"
+        if score is None:
+            statut = "Non calculable"
+        elif decisions_anomalies.get(cle) == "acceptee":
+            statut = "Utilisé - anomalie acceptée"
+        else:
+            statut = "Utilisé"
 
         details.append(
             {

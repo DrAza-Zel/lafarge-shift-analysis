@@ -1,26 +1,23 @@
-import sqlite3
 import os
+import sqlite3
 
 
 DB_PATH = "database/shifts.db"
 
+DECISIONS_ANOMALIE = {
+    "a_verifier",
+    "acceptee",
+    "confirmee",
+}
+
 
 def initialiser_base():
-
-    # Créer le dossier database s'il n'existe pas
     os.makedirs("database", exist_ok=True)
 
-    # Connexion à la base SQLite
     connexion = sqlite3.connect(DB_PATH)
-
-    # Activer les clés étrangères
     connexion.execute("PRAGMA foreign_keys = ON")
-
-    # Création d'un curseur
     curseur = connexion.cursor()
 
-
-    # Table des shifts
     curseur.execute("""
         CREATE TABLE IF NOT EXISTS shifts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,8 +31,6 @@ def initialiser_base():
         )
     """)
 
-
-    # Table des mesures
     curseur.execute("""
         CREATE TABLE IF NOT EXISTS mesures (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,31 +40,33 @@ def initialiser_base():
             produit TEXT,
             kpi TEXT NOT NULL,
             valeur REAL,
-
-            FOREIGN KEY (shift_id)
-            REFERENCES shifts(id)
+            FOREIGN KEY (shift_id) REFERENCES shifts(id)
         )
     """)
 
+    curseur.execute("""
+        CREATE TABLE IF NOT EXISTS validations_anomalies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shift_id INTEGER NOT NULL,
+            section TEXT NOT NULL,
+            equipement TEXT NOT NULL DEFAULT '',
+            produit TEXT NOT NULL DEFAULT '',
+            kpi TEXT NOT NULL,
+            decision TEXT NOT NULL DEFAULT 'a_verifier',
+            UNIQUE (shift_id, section, equipement, produit, kpi),
+            FOREIGN KEY (shift_id) REFERENCES shifts(id)
+        )
+    """)
 
     connexion.commit()
-
     connexion.close()
 
 
 def enregistrer_shift(shift):
-
-    # Connexion à la base SQLite
     connexion = sqlite3.connect(DB_PATH)
-
-    # Activer les clés étrangères
     connexion.execute("PRAGMA foreign_keys = ON")
-
-    # Création d'un curseur
     curseur = connexion.cursor()
 
-
-    # Vérifier si le shift existe déjà
     curseur.execute("""
         SELECT id
         FROM shifts
@@ -83,26 +80,17 @@ def enregistrer_shift(shift):
         shift["heure_debut"],
         shift["date_fin"],
         shift["heure_fin"],
-        shift["poste"]
+        shift["poste"],
     ))
-
 
     shift_existant = curseur.fetchone()
 
-
-    # Si le shift existe déjà
     if shift_existant:
-
         shift_id = shift_existant[0]
-
         connexion.close()
-
         print("Shift déjà enregistré avec l'id :", shift_id)
-
         return shift_id, False
 
-
-    # Enregistrer le nouveau shift
     curseur.execute("""
         INSERT INTO shifts (
             date_debut,
@@ -121,21 +109,15 @@ def enregistrer_shift(shift):
         shift["heure_fin"],
         shift["poste"],
         shift["responsable_l1"],
-        shift["responsable_l2"]
+        shift["responsable_l2"],
     ))
 
-
-    # Récupérer l'id du shift créé
     shift_id = curseur.lastrowid
 
-
-    # Enregistrer les données Cuisson
     for equipement in shift["cuisson"]:
-
         nom_equipement = equipement["equipement"]
 
         for kpi, valeur in equipement.items():
-
             if kpi == "equipement":
                 continue
 
@@ -155,19 +137,15 @@ def enregistrer_shift(shift):
                 nom_equipement,
                 None,
                 kpi,
-                valeur
+                valeur,
             ))
 
-
-    # Enregistrer les broyeurs ciment
     for broyeur in shift["broyeurs"]:
-
         nom_broyeur = broyeur["broyeur"]
         produit = broyeur["produit"]
 
         for kpi, valeur in broyeur.items():
-
-            if kpi == "broyeur" or kpi == "produit":
+            if kpi in ("broyeur", "produit"):
                 continue
 
             curseur.execute("""
@@ -186,17 +164,13 @@ def enregistrer_shift(shift):
                 nom_broyeur,
                 produit,
                 kpi,
-                valeur
+                valeur,
             ))
 
-
-    # Enregistrer les données environnement
     for equipement in shift["environnement"]:
-
         nom_equipement = equipement["equipement"]
 
         for kpi, valeur in equipement.items():
-
             if kpi == "equipement":
                 continue
 
@@ -216,17 +190,13 @@ def enregistrer_shift(shift):
                 nom_equipement,
                 None,
                 kpi,
-                valeur
+                valeur,
             ))
 
-
-    # Enregistrer les données compresseurs
     for equipement in shift["compresseurs"]:
-
         nom_equipement = equipement["equipement"]
 
         for kpi, valeur in equipement.items():
-
             if kpi == "equipement":
                 continue
 
@@ -246,29 +216,20 @@ def enregistrer_shift(shift):
                 nom_equipement,
                 None,
                 kpi,
-                valeur
+                valeur,
             ))
 
-
     connexion.commit()
-
     connexion.close()
 
     print("Nouveau shift enregistré avec l'id :", shift_id)
-
     return shift_id, True
 
 
 def afficher_shifts():
-
-    # Connexion à la base
     connexion = sqlite3.connect(DB_PATH)
-
-    # Création du curseur
     curseur = connexion.cursor()
 
-
-    # Récupérer tous les shifts
     curseur.execute("""
         SELECT
             id,
@@ -283,24 +244,15 @@ def afficher_shifts():
         ORDER BY id
     """)
 
-
     shifts = curseur.fetchall()
-
     connexion.close()
-
     return shifts
 
 
 def afficher_mesures_shift(shift_id):
-
-    # Connexion à la base
     connexion = sqlite3.connect(DB_PATH)
-
-    # Création du curseur
     curseur = connexion.cursor()
 
-
-    # Récupérer toutes les mesures du shift demandé
     curseur.execute("""
         SELECT
             section,
@@ -311,22 +263,15 @@ def afficher_mesures_shift(shift_id):
         FROM mesures
         WHERE shift_id = ?
         ORDER BY section, equipement
-    """, (
-        shift_id,
-    ))
-
-
+    """, (shift_id,))
 
     mesures = curseur.fetchall()
-
     connexion.close()
-
     return mesures
 
+
 def recuperer_mesures_pour_analyse():
-
     connexion = sqlite3.connect(DB_PATH)
-
     curseur = connexion.cursor()
 
     curseur.execute("""
@@ -347,15 +292,12 @@ def recuperer_mesures_pour_analyse():
     """)
 
     mesures = curseur.fetchall()
-
     connexion.close()
-
     return mesures
 
+
 def recuperer_kpis_distincts():
-
     connexion = sqlite3.connect(DB_PATH)
-
     curseur = connexion.cursor()
 
     curseur.execute("""
@@ -365,43 +307,113 @@ def recuperer_kpis_distincts():
             produit,
             kpi
         FROM mesures
-        ORDER BY
-            section,
-            equipement,
-            produit,
-            kpi
+        ORDER BY section, equipement, produit, kpi
     """)
 
     kpis = curseur.fetchall()
-
     connexion.close()
-
     return kpis
 
-def modifier_responsables_shift(
-    shift_id,
-    responsable_l1,
-    responsable_l2
-):
 
+def modifier_responsables_shift(shift_id, responsable_l1, responsable_l2):
     connexion = sqlite3.connect(DB_PATH)
-
     curseur = connexion.cursor()
-
 
     curseur.execute("""
         UPDATE shifts
-        SET
-            responsable_l1 = ?,
+        SET responsable_l1 = ?,
             responsable_l2 = ?
         WHERE id = ?
     """, (
         responsable_l1,
         responsable_l2,
-        shift_id
+        shift_id,
     ))
 
+    connexion.commit()
+    connexion.close()
+
+
+def enregistrer_decision_anomalie(
+    shift_id,
+    section,
+    equipement,
+    produit,
+    kpi,
+    decision,
+):
+    if decision not in DECISIONS_ANOMALIE:
+        raise ValueError("Décision d'anomalie invalide.")
+
+    equipement_db = equipement or ""
+    produit_db = produit or ""
+
+    connexion = sqlite3.connect(DB_PATH)
+    connexion.execute("PRAGMA foreign_keys = ON")
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        INSERT INTO validations_anomalies (
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi,
+            decision
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi
+        )
+        DO UPDATE SET decision = excluded.decision
+    """, (
+        shift_id,
+        section,
+        equipement_db,
+        produit_db,
+        kpi,
+        decision,
+    ))
 
     connexion.commit()
-
     connexion.close()
+
+
+def recuperer_decisions_anomalies():
+    connexion = sqlite3.connect(DB_PATH)
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        SELECT
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi,
+            decision
+        FROM validations_anomalies
+    """)
+
+    lignes = curseur.fetchall()
+    connexion.close()
+
+    decisions = {}
+
+    for ligne in lignes:
+        shift_id, section, equipement, produit, kpi, decision = ligne
+
+        cle = (
+            shift_id,
+            section,
+            equipement or None,
+            produit or None,
+            kpi,
+        )
+
+        decisions[cle] = decision
+
+    return decisions

@@ -9,6 +9,7 @@ from src.database import (
     afficher_mesures_shift,
     recuperer_mesures_pour_analyse,
     modifier_responsables_shift,
+    enregistrer_decision_anomalie,
 )
 from src.validation import detecter_anomalies
 from src.scoring import calculer_score_shift, obtenir_details_score_shift
@@ -147,6 +148,13 @@ if anomalies:
 else:
     df_anomalies = pd.DataFrame()
 
+if df_anomalies.empty:
+    df_anomalies_actives = pd.DataFrame()
+else:
+    df_anomalies_actives = df_anomalies[
+        df_anomalies["decision"] != "acceptee"
+    ].copy()
+
 
 # -------------------------------------------------------------------
 # Vue générale
@@ -234,12 +242,15 @@ if page == "Vue générale":
 
         st.subheader("⚠️ Alertes")
 
-        if df_anomalies.empty:
-            st.success("Aucune valeur suspecte détectée.")
+        if df_anomalies_actives.empty:
+            st.success("Aucune valeur suspecte active.")
         else:
-            st.warning(f"{len(df_anomalies)} valeur(s) suspecte(s) détectée(s).")
+            st.warning(
+                f"{len(df_anomalies_actives)} valeur(s) suspecte(s) "
+                "à vérifier ou confirmée(s)."
+            )
 
-            apercu_anomalies = df_anomalies[
+            apercu_anomalies = df_anomalies_actives[
                 ["date", "poste", "equipement", "kpi", "valeur"]
             ].copy()
 
@@ -965,6 +976,7 @@ elif page == "Analyse détaillée":
                         "valeur",
                         "mediane",
                         "score_anomalie",
+                        "decision",
                     ]
                 ],
                 use_container_width=True,
@@ -978,10 +990,10 @@ elif page == "Analyse détaillée":
 
 elif page == "Anomalies":
     st.title("⚠️ Valeurs suspectes")
-
     st.write(
-        "Les valeurs présentées ici sont statistiquement inhabituelles "
-        "et nécessitent une vérification."
+        "Les anomalies sont détectées automatiquement. Vous pouvez ensuite "
+        "accepter une valeur comme valide ou confirmer qu'il s'agit bien "
+        "d'une anomalie."
     )
 
     if df_anomalies.empty:
@@ -989,9 +1001,7 @@ elif page == "Anomalies":
     else:
         col1, col2, col3 = st.columns(3)
 
-        postes = sorted(
-            df_anomalies["poste"].dropna().unique()
-        )
+        postes = sorted(df_anomalies["poste"].dropna().unique())
 
         responsables = sorted(
             {
@@ -1001,9 +1011,7 @@ elif page == "Anomalies":
             }
         )
 
-        sections = sorted(
-            df_anomalies["section"].dropna().unique()
-        )
+        sections = sorted(df_anomalies["section"].dropna().unique())
 
         filtre_poste = col1.selectbox(
             "Poste",
@@ -1039,8 +1047,20 @@ elif page == "Anomalies":
                 df_filtre["section"] == filtre_section
             ]
 
-        affichage = df_filtre[
+        labels_decision = {
+            "a_verifier": "À vérifier",
+            "acceptee": "Valeur acceptée",
+            "confirmee": "Anomalie confirmée",
+        }
+
+        codes_decision = {
+            valeur: cle
+            for cle, valeur in labels_decision.items()
+        }
+
+        edition = df_filtre[
             [
+                "shift_id",
                 "date",
                 "poste",
                 "responsable",
@@ -1051,10 +1071,14 @@ elif page == "Anomalies":
                 "valeur",
                 "mediane",
                 "score_anomalie",
+                "decision",
             ]
         ].copy()
 
-        affichage.columns = [
+        edition["decision"] = edition["decision"].map(labels_decision)
+
+        edition.columns = [
+            "Shift ID",
             "Date",
             "Poste",
             "Responsable",
@@ -1065,14 +1089,75 @@ elif page == "Anomalies":
             "Valeur",
             "Médiane",
             "Score anomalie",
+            "Décision",
         ]
 
-        st.dataframe(
-            affichage,
+        edition_modifiee = st.data_editor(
+            edition,
             use_container_width=True,
             hide_index=True,
+            num_rows="fixed",
+            disabled=[
+                "Shift ID",
+                "Date",
+                "Poste",
+                "Responsable",
+                "Section",
+                "Équipement",
+                "Produit",
+                "KPI",
+                "Valeur",
+                "Médiane",
+                "Score anomalie",
+            ],
+            column_config={
+                "Décision": st.column_config.SelectboxColumn(
+                    "Décision",
+                    options=[
+                        "À vérifier",
+                        "Valeur acceptée",
+                        "Anomalie confirmée",
+                    ],
+                    required=True,
+                )
+            },
+            key="editeur_anomalies",
         )
 
+        if st.button(
+            "Enregistrer les décisions",
+            use_container_width=True,
+        ):
+            for _, ligne in edition_modifiee.iterrows():
+                decision = codes_decision[ligne["Décision"]]
+
+                produit = ligne["Produit"]
+                if pd.isna(produit) or str(produit).strip() == "":
+                    produit = None
+
+                equipement = ligne["Équipement"]
+                if pd.isna(equipement) or str(equipement).strip() == "":
+                    equipement = None
+
+                enregistrer_decision_anomalie(
+                    int(ligne["Shift ID"]),
+                    ligne["Section"],
+                    equipement,
+                    produit,
+                    ligne["KPI"],
+                    decision,
+                )
+
+            st.success(
+                "Décisions enregistrées. Les scores sont recalculés "
+                "automatiquement."
+            )
+            st.rerun()
+
+        st.caption(
+            "Une valeur acceptée est réintégrée dans le scoring. "
+            "Une anomalie confirmée reste exclue du score."
+        )
 
 
 # -------------------------------------------------------------------
