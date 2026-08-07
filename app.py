@@ -12,7 +12,15 @@ from src.database import (
 )
 from src.validation import detecter_anomalies
 from src.scoring import calculer_score_shift, obtenir_details_score_shift
-from src.objectifs_kpi import SEUIL_COUVERTURE_CLASSEMENT
+from src.objectifs_kpi import (
+    POIDS_SECTIONS,
+    SEUIL_COUVERTURE_CLASSEMENT,
+    charger_objectifs_kpi,
+    obtenir_configuration_complete,
+    reinitialiser_objectifs_kpi,
+    sauvegarder_objectifs_kpi,
+    valider_objectifs_kpi,
+)
 from src.import_pdf import importer_pdf_bytes
 
 
@@ -38,6 +46,7 @@ page = st.sidebar.radio(
         "Responsables",
         "Analyse détaillée",
         "Anomalies",
+        "Paramètres du scoring",
         "Import PDF",
     ],
 )
@@ -874,7 +883,12 @@ elif page == "Analyse détaillée":
                     "equipement",
                     "produit",
                     "kpi",
+                    "type",
                     "valeur",
+                    "objectif",
+                    "limite",
+                    "cible",
+                    "tolerance",
                     "poids",
                     "score",
                     "statut",
@@ -886,7 +900,12 @@ elif page == "Analyse détaillée":
                 "Équipement",
                 "Produit",
                 "KPI",
+                "Type",
                 "Valeur",
+                "Objectif",
+                "Limite",
+                "Cible",
+                "Tolérance",
                 "Poids",
                 "Score / 100",
                 "Statut",
@@ -1054,6 +1073,176 @@ elif page == "Anomalies":
             hide_index=True,
         )
 
+
+
+# -------------------------------------------------------------------
+# Paramètres du scoring
+# -------------------------------------------------------------------
+
+elif page == "Paramètres du scoring":
+    st.title("Paramètres du scoring")
+    st.write(
+        "Modifiez les objectifs, limites, cibles, tolérances et poids utilisés "
+        "dans le calcul des scores. Les modifications sont appliquées dès "
+        "l'enregistrement."
+    )
+
+    st.subheader("Poids des sections")
+
+    df_poids_sections = pd.DataFrame(
+        [
+            {
+                "Section": section.capitalize(),
+                "Poids dans le score global (%)": poids,
+            }
+            for section, poids in POIDS_SECTIONS.items()
+        ]
+    )
+
+    st.dataframe(
+        df_poids_sections,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.caption(
+        "Les poids des grandes sections restent fixes dans la version V1. "
+        "Les poids des KPI sont modifiables ci-dessous."
+    )
+
+    st.divider()
+    st.subheader("Configuration des KPI")
+
+    objectifs_actuels = charger_objectifs_kpi()
+    lignes_parametres = []
+
+    for cle, configuration_specifique in objectifs_actuels.items():
+        section, equipement, produit, kpi = cle
+
+        configuration_complete = obtenir_configuration_complete(
+            section,
+            equipement,
+            produit,
+            kpi,
+            objectifs=objectifs_actuels,
+        )
+
+        lignes_parametres.append(
+            {
+                "Section": section,
+                "Équipement": equipement,
+                "Produit": produit if produit is not None else "",
+                "KPI": kpi,
+                "Type": configuration_complete.get("type"),
+                "Actif": bool(configuration_specifique.get("actif", False)),
+                "Objectif": configuration_specifique.get("objectif"),
+                "Limite": configuration_specifique.get("limite"),
+                "Cible": configuration_specifique.get("cible"),
+                "Tolérance": configuration_specifique.get("tolerance"),
+                "Poids": configuration_specifique.get("poids"),
+            }
+        )
+
+    df_parametres = pd.DataFrame(lignes_parametres)
+
+    df_parametres_modifie = st.data_editor(
+        df_parametres,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        disabled=[
+            "Section",
+            "Équipement",
+            "Produit",
+            "KPI",
+            "Type",
+        ],
+        column_config={
+            "Actif": st.column_config.CheckboxColumn("Actif"),
+            "Objectif": st.column_config.NumberColumn("Objectif"),
+            "Limite": st.column_config.NumberColumn("Limite"),
+            "Cible": st.column_config.NumberColumn("Cible"),
+            "Tolérance": st.column_config.NumberColumn("Tolérance"),
+            "Poids": st.column_config.NumberColumn(
+                "Poids",
+                min_value=0.01,
+            ),
+        },
+        key="editeur_scoring",
+    )
+
+    def valeur_ou_none(valeur):
+        if pd.isna(valeur):
+            return None
+        return float(valeur)
+
+    col_save, col_reset = st.columns(2)
+
+    if col_save.button(
+        "Enregistrer les paramètres",
+        use_container_width=True,
+    ):
+        nouveaux_objectifs = {}
+
+        for _, ligne in df_parametres_modifie.iterrows():
+            produit = ligne["Produit"]
+
+            if pd.isna(produit) or str(produit).strip() == "":
+                produit = None
+            else:
+                produit = str(produit).strip()
+
+            cle = (
+                str(ligne["Section"]),
+                str(ligne["Équipement"]),
+                produit,
+                str(ligne["KPI"]),
+            )
+
+            type_kpi = str(ligne["Type"])
+
+            configuration = {
+                "actif": bool(ligne["Actif"]),
+                "poids": valeur_ou_none(ligne["Poids"]),
+            }
+
+            if type_kpi in ("minimiser", "maximiser"):
+                configuration["objectif"] = valeur_ou_none(ligne["Objectif"])
+                configuration["limite"] = valeur_ou_none(ligne["Limite"])
+
+            elif type_kpi == "cible":
+                configuration["cible"] = valeur_ou_none(ligne["Cible"])
+                configuration["tolerance"] = valeur_ou_none(ligne["Tolérance"])
+
+            elif type_kpi == "conformite":
+                configuration["limite"] = valeur_ou_none(ligne["Limite"])
+
+            nouveaux_objectifs[cle] = configuration
+
+        problemes = valider_objectifs_kpi(nouveaux_objectifs)
+
+        if problemes:
+            st.error(
+                "Les paramètres ne peuvent pas être enregistrés. "
+                "Corrigez les points suivants :"
+            )
+
+            for probleme in problemes:
+                st.write(f"- {probleme}")
+        else:
+            sauvegarder_objectifs_kpi(nouveaux_objectifs)
+            st.success(
+                "Paramètres enregistrés. Les scores vont être recalculés."
+            )
+            st.rerun()
+
+    if col_reset.button(
+        "Réinitialiser les valeurs par défaut",
+        use_container_width=True,
+    ):
+        reinitialiser_objectifs_kpi()
+        st.success("Les paramètres par défaut ont été restaurés.")
+        st.rerun()
 
 # -------------------------------------------------------------------
 # Import PDF
