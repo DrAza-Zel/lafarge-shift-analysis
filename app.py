@@ -23,6 +23,7 @@ from src.objectifs_kpi import (
     valider_objectifs_kpi,
 )
 from src.import_pdf import importer_pdf_bytes
+from src.export_csv import creer_export_csv
 
 
 st.set_page_config(
@@ -97,6 +98,7 @@ page = st.sidebar.radio(
         "Analyse détaillée",
         "Anomalies",
         "Paramètres du scoring",
+        "Export CSV",
         "Import PDF",
     ],
 )
@@ -1421,6 +1423,112 @@ elif page == "Paramètres du scoring":
         reinitialiser_objectifs_kpi()
         st.success("Les paramètres par défaut ont été restaurés.")
         st.rerun()
+
+
+# -------------------------------------------------------------------
+# Export CSV
+# -------------------------------------------------------------------
+
+elif page == "Export CSV":
+    st.title("Export CSV")
+    st.write(
+        "Exportez l'historique des shifts et leurs scores dans un fichier CSV."
+    )
+
+    if df_shifts.empty:
+        st.info("Aucun shift disponible à exporter.")
+    else:
+        dates_disponibles = df_shifts["date"].dropna().dt.date
+        date_min = dates_disponibles.min()
+        date_max = dates_disponibles.max()
+
+        st.subheader("Période à exporter")
+
+        col1, col2 = st.columns(2)
+
+        date_debut_export = col1.date_input(
+            "Du",
+            value=date_min,
+            min_value=date_min,
+            max_value=date_max,
+            key="export_csv_date_debut",
+        )
+
+        date_fin_export = col2.date_input(
+            "Au",
+            value=date_max,
+            min_value=date_min,
+            max_value=date_max,
+            key="export_csv_date_fin",
+        )
+
+        if date_debut_export > date_fin_export:
+            st.error(
+                "La date de début doit être antérieure ou égale à la date de fin."
+            )
+        else:
+            masque = (
+                (df_shifts["date"].dt.date >= date_debut_export)
+                & (df_shifts["date"].dt.date <= date_fin_export)
+            )
+
+            df_export = df_shifts.loc[masque].copy()
+
+            if df_export.empty:
+                st.info("Aucun shift disponible sur cette période.")
+            else:
+                responsables_export = {
+                    nom
+                    for liste_responsables in df_export["responsables_liste"]
+                    for nom in liste_responsables
+                }
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                col1.metric(
+                    "Shifts",
+                    len(df_export),
+                )
+
+                col2.metric(
+                    "Classables",
+                    int(df_export["classable"].sum()),
+                )
+
+                col3.metric(
+                    "Postes",
+                    df_export["poste"].nunique(),
+                )
+
+                col4.metric(
+                    "Responsables",
+                    len(responsables_export),
+                )
+
+                st.caption(
+                    "Le fichier contient une ligne par shift avec les responsables, "
+                    "les scores par domaine, le score global, la couverture, "
+                    "les anomalies et le statut classable."
+                )
+
+                fichier_csv = creer_export_csv(
+                    df_export
+                )
+
+                nom_fichier = (
+                    "shift_performance_"
+                    f"{date_debut_export:%Y%m%d}_"
+                    f"{date_fin_export:%Y%m%d}.csv"
+                )
+
+                st.download_button(
+                    "Télécharger le fichier CSV",
+                    data=fichier_csv,
+                    file_name=nom_fichier,
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
 
 # -------------------------------------------------------------------
 # Import PDF
