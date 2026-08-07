@@ -35,6 +35,55 @@ appliquer_style_holcim()
 initialiser_base()
 afficher_header_holcim()
 
+
+def filtrer_par_periode(df, colonne_date, prefixe):
+    if df.empty:
+        return df
+
+    dates = pd.to_datetime(
+        df[colonne_date],
+        dayfirst=True,
+        errors="coerce",
+    ).dt.date
+
+    dates_valides = dates.dropna()
+
+    if dates_valides.empty:
+        return df
+
+    date_min = dates_valides.min()
+    date_max = dates_valides.max()
+
+    col1, col2 = st.columns(2)
+
+    date_debut = col1.date_input(
+        "Du",
+        value=date_min,
+        min_value=date_min,
+        max_value=date_max,
+        key=f"{prefixe}_date_debut",
+    )
+
+    date_fin = col2.date_input(
+        "Au",
+        value=date_max,
+        min_value=date_min,
+        max_value=date_max,
+        key=f"{prefixe}_date_fin",
+    )
+
+    if date_debut > date_fin:
+        st.error("La date de début doit être antérieure ou égale à la date de fin.")
+        return df.iloc[0:0].copy()
+
+    masque = (
+        (dates >= date_debut)
+        & (dates <= date_fin)
+    )
+
+    return df.loc[masque].copy()
+
+
 st.sidebar.title("🏭 Shift Performance")
 
 page = st.sidebar.radio(
@@ -279,16 +328,24 @@ elif page == "Shifts":
     if df_shifts.empty:
         st.info("Aucun shift disponible.")
     else:
+        st.subheader("Période")
+        df_filtre = filtrer_par_periode(
+            df_shifts,
+            "date",
+            "shifts",
+        )
+
+        st.subheader("Filtres")
         col_filtre1, col_filtre2 = st.columns(2)
 
         postes_disponibles = sorted(
-            df_shifts["poste"].dropna().unique()
+            df_filtre["poste"].dropna().unique()
         )
 
         responsables_disponibles = sorted(
             {
                 nom
-                for liste_responsables in df_shifts["responsables_liste"]
+                for liste_responsables in df_filtre["responsables_liste"]
                 for nom in liste_responsables
             }
         )
@@ -302,8 +359,6 @@ elif page == "Shifts":
             "Responsable",
             ["Tous"] + responsables_disponibles,
         )
-
-        df_filtre = df_shifts.copy()
 
         if poste_selectionne != "Tous":
             df_filtre = df_filtre[
@@ -499,11 +554,24 @@ elif page == "Postes":
     if df_shifts.empty:
         st.info("Aucune donnée disponible.")
     else:
+        st.subheader("Période")
+        df_postes_periode = filtrer_par_periode(
+            df_shifts,
+            "date",
+            "postes",
+        )
+
+        if df_postes_periode.empty:
+            st.info("Aucun shift disponible sur cette période.")
+            st.stop()
+
         donnees_postes = []
-        postes = sorted(df_shifts["poste"].dropna().unique())
+        postes = sorted(df_postes_periode["poste"].dropna().unique())
 
         for poste in postes:
-            df_poste = df_shifts[df_shifts["poste"] == poste]
+            df_poste = df_postes_periode[
+                df_postes_periode["poste"] == poste
+            ]
             df_classable = df_poste[df_poste["classable"]]
 
             if not df_classable.empty:
@@ -588,7 +656,9 @@ elif page == "Postes":
 
         st.subheader("Évolution dans le temps")
 
-        evolution = df_shifts[df_shifts["classable"]][
+        evolution = df_postes_periode[
+            df_postes_periode["classable"]
+        ][
             ["date", "poste", "score_global"]
         ]
 
@@ -617,19 +687,30 @@ elif page == "Responsables":
     if df_shifts.empty:
         st.info("Aucune donnée disponible.")
     else:
+        st.subheader("Période")
+        df_responsables_periode = filtrer_par_periode(
+            df_shifts,
+            "date",
+            "responsables",
+        )
+
+        if df_responsables_periode.empty:
+            st.info("Aucun shift disponible sur cette période.")
+            st.stop()
+
         donnees_responsables = []
 
         responsables = sorted(
             {
                 nom
-                for liste_responsables in df_shifts["responsables_liste"]
+                for liste_responsables in df_responsables_periode["responsables_liste"]
                 for nom in liste_responsables
             }
         )
 
         for responsable in responsables:
-            df_responsable = df_shifts[
-                df_shifts["responsables_liste"].apply(
+            df_responsable = df_responsables_periode[
+                df_responsables_periode["responsables_liste"].apply(
                     lambda liste: responsable in liste
                 )
             ]
@@ -723,7 +804,9 @@ elif page == "Responsables":
 
             st.subheader("Évolution dans le temps")
 
-            evolution = df_shifts[df_shifts["classable"]][
+            evolution = df_responsables_periode[
+                df_responsables_periode["classable"]
+            ][
                 ["date", "responsables_liste", "score_global"]
             ].copy()
 
@@ -999,19 +1082,31 @@ elif page == "Anomalies":
     if df_anomalies.empty:
         st.success("Aucune valeur suspecte détectée.")
     else:
+        st.subheader("Période")
+        df_filtre = filtrer_par_periode(
+            df_anomalies,
+            "date",
+            "anomalies",
+        )
+
+        if df_filtre.empty:
+            st.info("Aucune anomalie détectée sur cette période.")
+            st.stop()
+
+        st.subheader("Filtres")
         col1, col2, col3 = st.columns(3)
 
-        postes = sorted(df_anomalies["poste"].dropna().unique())
+        postes = sorted(df_filtre["poste"].dropna().unique())
 
         responsables = sorted(
             {
                 nom
-                for liste_responsables in df_anomalies["responsables_liste"]
+                for liste_responsables in df_filtre["responsables_liste"]
                 for nom in liste_responsables
             }
         )
 
-        sections = sorted(df_anomalies["section"].dropna().unique())
+        sections = sorted(df_filtre["section"].dropna().unique())
 
         filtre_poste = col1.selectbox(
             "Poste",
@@ -1027,8 +1122,6 @@ elif page == "Anomalies":
             "Section",
             ["Toutes"] + sections,
         )
-
-        df_filtre = df_anomalies.copy()
 
         if filtre_poste != "Tous":
             df_filtre = df_filtre[
