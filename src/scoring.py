@@ -78,11 +78,19 @@ def calculer_score_kpi(valeur, configuration):
     return round(score, 2)
 
 
-def calculer_score_shift(shift_id):
+def calculer_score_shift(
+    shift_id,
+    anomalies=None,
+    objectifs_kpi=None,
+):
     mesures_shift = afficher_mesures_shift(shift_id)
-    toutes_les_mesures = recuperer_mesures_pour_analyse()
-    anomalies = detecter_anomalies(toutes_les_mesures)
-    objectifs_kpi = charger_objectifs_kpi()
+
+    if anomalies is None:
+        toutes_les_mesures = recuperer_mesures_pour_analyse()
+        anomalies = detecter_anomalies(toutes_les_mesures)
+
+    if objectifs_kpi is None:
+        objectifs_kpi = charger_objectifs_kpi()
 
     cles_anomalies = set()
     nombre_anomalies = 0

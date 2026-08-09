@@ -25,8 +25,14 @@ def charger_logo_base64():
 
 
 def charger_background_base64():
-    for nom in ("background.jpg", "background.jpeg", "background.png", "background.webp"):
+    for nom in (
+        "background.jpg",
+        "background.jpeg",
+        "background.png",
+        "background.webp",
+    ):
         chemin = Path("assets") / nom
+
         if chemin.exists():
             mime = {
                 ".jpg": "image/jpeg",
@@ -34,9 +40,12 @@ def charger_background_base64():
                 ".png": "image/png",
                 ".webp": "image/webp",
             }[chemin.suffix.lower()]
+
             with open(chemin, "rb") as fichier:
                 image = base64.b64encode(fichier.read()).decode()
+
             return f"data:{mime};base64,{image}"
+
     return None
 
 
@@ -53,6 +62,10 @@ def appliquer_style_holcim():
         <div class="holcim-background"></div>
 
         <style>
+        /* =========================================================
+           APPLICATION
+           ========================================================= */
+
         .stApp {{
             color:{HOLCIM_NAVY};
             background:transparent !important;
@@ -74,6 +87,7 @@ def appliquer_style_holcim():
             position:absolute;
             inset:0;
             background:rgba(255,255,255,0.55);
+            pointer-events:none;
         }}
 
         [data-testid="stAppViewContainer"],
@@ -87,11 +101,6 @@ def appliquer_style_holcim():
         [data-testid="stAppViewContainer"] {{
             position:relative;
             z-index:1;
-        }}
-
-        section[data-testid="stSidebar"] {{
-            position:relative;
-            z-index:3;
         }}
 
         #MainMenu,
@@ -132,10 +141,46 @@ def appliquer_style_holcim():
             font-weight:750 !important;
         }}
 
-        section[data-testid="stSidebar"],
+        /* =========================================================
+           SIDEBAR : COULEUR + SCROLL
+           ========================================================= */
+
+        section[data-testid="stSidebar"] {{
+            position:relative;
+            z-index:50;
+            height:100vh !important;
+            max-height:100vh !important;
+            overflow:hidden !important;
+            background-color:{HOLCIM_NAVY} !important;
+            border-right:none !important;
+        }}
+
         section[data-testid="stSidebar"] > div {{
             background-color:{HOLCIM_NAVY} !important;
-            border-right:none;
+        }}
+
+        section[data-testid="stSidebar"] > div:first-child {{
+            height:100vh !important;
+            max-height:100vh !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain;
+        }}
+
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {{
+            height:100vh !important;
+            max-height:100vh !important;
+            overflow-y:auto !important;
+            overflow-x:hidden !important;
+            overscroll-behavior:contain;
+            padding-bottom:2rem !important;
+        }}
+
+        /* Le titre de la sidebar doit rester lisible sur le bleu */
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3 {{
+            color:white !important;
         }}
 
         section[data-testid="stSidebar"] p,
@@ -145,28 +190,120 @@ def appliquer_style_holcim():
         }}
 
         section[data-testid="stSidebar"] hr {{
-            border-color:rgba(255,255,255,0.18);
+            border-color:rgba(255,255,255,0.18) !important;
         }}
 
-        div[data-testid="stRadio"] div[role="radiogroup"] {{
+        /* Scrollbar visible mais discrète */
+        section[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar,
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar {{
+            width:8px;
+        }}
+
+        section[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-track,
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar-track {{
+            background:transparent;
+        }}
+
+        section[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-thumb,
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar-thumb {{
+            background:rgba(255,255,255,0.35);
+            border-radius:10px;
+        }}
+
+        section[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-thumb:hover,
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]::-webkit-scrollbar-thumb:hover {{
+            background:rgba(255,255,255,0.55);
+        }}
+
+        /* =========================================================
+           NAVIGATION AVEC st.sidebar.button
+           ========================================================= */
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] {{
+            margin:0.15rem 0 !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button {{
+            width:100% !important;
+            min-height:42px !important;
+            display:flex !important;
+            align-items:center !important;
+            justify-content:flex-start !important;
+            background:transparent !important;
+            color:white !important;
+            border:1px solid transparent !important;
+            border-radius:7px !important;
+            padding:0.55rem 0.8rem !important;
+            box-shadow:none !important;
+            text-transform:none !important;
+            letter-spacing:0 !important;
+            font-weight:600 !important;
+            transition:background-color 0.15s ease,border-color 0.15s ease !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button * {{
+            color:white !important;
+            text-align:left !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {{
+            background:rgba(255,255,255,0.12) !important;
+            border-color:rgba(255,255,255,0.12) !important;
+            color:white !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover * {{
+            color:white !important;
+        }}
+
+        /* Si le bouton actif est créé avec type="primary" */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"] {{
+            background:white !important;
+            color:{HOLCIM_NAVY} !important;
+            border-color:white !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"] * {{
+            color:{HOLCIM_NAVY} !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"]:hover {{
+            background:white !important;
+            color:{HOLCIM_NAVY} !important;
+            border-color:white !important;
+        }}
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"]:hover * {{
+            color:{HOLCIM_NAVY} !important;
+        }}
+
+        /* =========================================================
+           COMPATIBILITÉ SI TU UTILISES ENCORE st.sidebar.radio
+           ========================================================= */
+
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] div[role="radiogroup"] {{
             gap:4px;
         }}
 
-        div[data-testid="stRadio"] label {{
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] label {{
             padding:10px 12px;
             margin:0;
-            border-radius:0;
+            border-radius:7px;
             font-weight:600;
             cursor:pointer;
         }}
 
-        div[data-testid="stRadio"] label:hover {{
-            background-color:rgba(255,255,255,0.08);
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] label:hover {{
+            background-color:rgba(255,255,255,0.10);
         }}
 
-        div[data-testid="stRadio"] input {{
+        section[data-testid="stSidebar"] div[data-testid="stRadio"] input {{
             accent-color:#00A9CE;
         }}
+
+        /* =========================================================
+           METRICS
+           ========================================================= */
 
         div[data-testid="stMetric"] {{
             background-color:rgba(255,255,255,0.94);
@@ -191,7 +328,11 @@ def appliquer_style_holcim():
             font-weight:800;
         }}
 
-        .stButton > button {{
+        /* =========================================================
+           BOUTONS DU CONTENU PRINCIPAL
+           ========================================================= */
+
+        [data-testid="stMain"] .stButton > button {{
             background-color:white;
             color:{HOLCIM_NAVY};
             border:2px solid {HOLCIM_NAVY};
@@ -203,11 +344,15 @@ def appliquer_style_holcim():
             transition:0.15s ease;
         }}
 
-        .stButton > button:hover {{
+        [data-testid="stMain"] .stButton > button:hover {{
             background-color:{HOLCIM_NAVY};
             color:white;
             border-color:{HOLCIM_NAVY};
         }}
+
+        /* =========================================================
+           FORMULAIRES / TABLEAUX
+           ========================================================= */
 
         div[data-baseweb="select"] > div {{
             background-color:rgba(255,255,255,0.94);
@@ -235,6 +380,10 @@ def appliquer_style_holcim():
             margin-top:2.2rem !important;
             margin-bottom:2.2rem !important;
         }}
+
+        /* =========================================================
+           HEADER HOLCIM
+           ========================================================= */
 
         .holcim-header {{
             width:100%;
@@ -276,6 +425,10 @@ def appliquer_style_holcim():
             text-transform:uppercase;
         }}
 
+        /* =========================================================
+           TITRE DE PAGE
+           ========================================================= */
+
         .page-hero {{
             background-color:{HOLCIM_NAVY};
             padding:38px 42px;
@@ -310,6 +463,10 @@ def appliquer_style_holcim():
             margin-bottom:10px;
         }}
 
+        /* =========================================================
+           FOOTER
+           ========================================================= */
+
         .holcim-footer {{
             margin-top:55px;
             padding:20px 26px;
@@ -318,6 +475,10 @@ def appliquer_style_holcim():
             font-size:0.78rem;
             letter-spacing:0.4px;
         }}
+
+        /* =========================================================
+           RESPONSIVE
+           ========================================================= */
 
         @media (max-width:900px) {{
             .holcim-header {{

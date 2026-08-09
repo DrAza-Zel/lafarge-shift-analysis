@@ -53,10 +53,27 @@ def initialiser_base():
             produit TEXT NOT NULL DEFAULT '',
             kpi TEXT NOT NULL,
             decision TEXT NOT NULL DEFAULT 'a_verifier',
+            nom_affiche TEXT,
+            score_personnalise REAL,
             UNIQUE (shift_id, section, equipement, produit, kpi),
             FOREIGN KEY (shift_id) REFERENCES shifts(id)
         )
     """)
+
+    curseur.execute("PRAGMA table_info(validations_anomalies)")
+    colonnes = {ligne[1] for ligne in curseur.fetchall()}
+
+    if "nom_affiche" not in colonnes:
+        curseur.execute("""
+            ALTER TABLE validations_anomalies
+            ADD COLUMN nom_affiche TEXT
+        """)
+
+    if "score_personnalise" not in colonnes:
+        curseur.execute("""
+            ALTER TABLE validations_anomalies
+            ADD COLUMN score_personnalise REAL
+        """)
 
     connexion.commit()
     connexion.close()
@@ -383,6 +400,124 @@ def enregistrer_decision_anomalie(
     connexion.close()
 
 
+
+def enregistrer_personnalisation_anomalie(
+    shift_id,
+    section,
+    equipement,
+    produit,
+    kpi,
+    decision,
+    nom_affiche=None,
+    score_personnalise=None,
+):
+    if decision not in DECISIONS_ANOMALIE:
+        raise ValueError("Décision d'anomalie invalide.")
+
+    equipement_db = equipement or ""
+    produit_db = produit or ""
+
+    if nom_affiche is not None:
+        nom_affiche = str(nom_affiche).strip()
+        if not nom_affiche:
+            nom_affiche = None
+
+    if score_personnalise is not None:
+        score_personnalise = float(score_personnalise)
+        if score_personnalise < 0:
+            raise ValueError(
+                "Le score d'anomalie personnalisé ne peut pas être négatif."
+            )
+
+    connexion = sqlite3.connect(DB_PATH)
+    connexion.execute("PRAGMA foreign_keys = ON")
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        INSERT INTO validations_anomalies (
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi,
+            decision,
+            nom_affiche,
+            score_personnalise
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi
+        )
+        DO UPDATE SET
+            decision = excluded.decision,
+            nom_affiche = excluded.nom_affiche,
+            score_personnalise = excluded.score_personnalise
+    """, (
+        shift_id,
+        section,
+        equipement_db,
+        produit_db,
+        kpi,
+        decision,
+        nom_affiche,
+        score_personnalise,
+    ))
+
+    connexion.commit()
+    connexion.close()
+
+
+def recuperer_personnalisations_anomalies():
+    connexion = sqlite3.connect(DB_PATH)
+    curseur = connexion.cursor()
+
+    curseur.execute("""
+        SELECT
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi,
+            nom_affiche,
+            score_personnalise
+        FROM validations_anomalies
+    """)
+
+    lignes = curseur.fetchall()
+    connexion.close()
+
+    personnalisations = {}
+
+    for ligne in lignes:
+        (
+            shift_id,
+            section,
+            equipement,
+            produit,
+            kpi,
+            nom_affiche,
+            score_personnalise,
+        ) = ligne
+
+        cle = (
+            shift_id,
+            section,
+            equipement or None,
+            produit or None,
+            kpi,
+        )
+
+        personnalisations[cle] = {
+            "nom_affiche": nom_affiche,
+            "score_personnalise": score_personnalise,
+        }
+
+    return personnalisations
+
 def recuperer_decisions_anomalies():
     connexion = sqlite3.connect(DB_PATH)
     curseur = connexion.cursor()
@@ -415,5 +550,3 @@ def recuperer_decisions_anomalies():
         )
 
         decisions[cle] = decision
-
-    return decisions

@@ -1,11 +1,15 @@
 from statistics import median
 
-from src.database import recuperer_decisions_anomalies
+from src.database import (
+    recuperer_decisions_anomalies,
+    recuperer_personnalisations_anomalies,
+)
 
 
 def detecter_anomalies(mesures):
     groupes = {}
-    decisions = recuperer_decisions_anomalies()
+    decisions = recuperer_decisions_anomalies() or {}
+    personnalisations = recuperer_personnalisations_anomalies() or {}
 
     for mesure in mesures:
         (
@@ -93,6 +97,16 @@ def detecter_anomalies(mesures):
                 "a_verifier",
             )
 
+            personnalisation = personnalisations.get(
+                cle_decision,
+                {},
+            )
+
+            score_calcule = round(score_anomalie, 2)
+            score_personnalise = personnalisation.get(
+                "score_personnalise"
+            )
+
             anomalies.append(
                 {
                     "shift_id": ligne[0],
@@ -106,9 +120,18 @@ def detecter_anomalies(mesures):
                     "kpi": ligne[8],
                     "valeur": ligne[9],
                     "mediane": valeur_mediane,
-                    "score_anomalie": round(score_anomalie, 2),
+                    "nom_anomalie_personnalise": personnalisation.get(
+                        "nom_affiche"
+                    ),
+                    "score_anomalie_calcule": score_calcule,
+                    "score_anomalie_personnalise": score_personnalise,
+                    "score_anomalie": (
+                        score_calcule
+                        if score_personnalise is None
+                        else round(float(score_personnalise), 2)
+                    ),
                     "decision": decision,
                 }
             )
 
-    return anomalies 
+    return anomalies

@@ -10,6 +10,7 @@ from src.database import (
     recuperer_mesures_pour_analyse,
     modifier_responsables_shift,
     enregistrer_decision_anomalie,
+    enregistrer_personnalisation_anomalie,
 )
 from src.validation import detecter_anomalies
 from src.scoring import calculer_score_shift, obtenir_details_score_shift
@@ -24,6 +25,10 @@ from src.objectifs_kpi import (
 )
 from src.import_pdf import importer_pdf_bytes
 from src.export_csv import creer_export_csv
+from src.libelles import (
+    charger_libelles_affichage,
+    nom_anomalie_affiche,
+)
 
 
 st.set_page_config(
@@ -34,6 +39,7 @@ st.set_page_config(
 
 appliquer_style_holcim()
 initialiser_base()
+libelles_affichage = charger_libelles_affichage()
 afficher_header_holcim()
 
 
@@ -87,107 +93,150 @@ def filtrer_par_periode(df, colonne_date, prefixe):
 
 st.sidebar.title("🏭 Shift Performance")
 
-page = st.sidebar.radio(
-    "Navigation",
-    [
-        "Vue générale",
-        "Shifts",
-        "Comparaison",
-        "Postes",
-        "Responsables",
-        "Analyse détaillée",
-        "Anomalies",
-        "Paramètres du scoring",
-        "Export CSV",
-        "Import PDF",
-    ],
-)
+PAGES = [
+    "Vue générale",
+    "Shifts",
+    "Comparaison",
+    "Postes",
+    "Responsables",
+    "Analyse détaillée",
+    "Anomalies",
+    "Paramètres du scoring",
+    "Export CSV",
+    "Import PDF",
+]
+
+if "page_active" not in st.session_state:
+    st.session_state["page_active"] = "Vue générale"
+
+
+def changer_page(nom_page):
+    st.session_state["page_active"] = nom_page
+
+
+for index, nom_page in enumerate(PAGES):
+    st.sidebar.button(
+        nom_page,
+        key=f"nav_page_{index}",
+        use_container_width=True,
+        type=(
+            "primary"
+            if st.session_state["page_active"] == nom_page
+            else "secondary"
+        ),
+        on_click=changer_page,
+        args=(nom_page,),
+    )
+
+page = st.session_state["page_active"]
+st.sidebar.caption(f"Page active : {page}")
 
 
 # -------------------------------------------------------------------
 # Chargement et préparation des shifts
 # -------------------------------------------------------------------
 
-shifts = afficher_shifts()
-donnees_shifts = []
+@st.cache_data(show_spinner=False)
+def charger_donnees_dashboard():
+    shifts = afficher_shifts()
+    mesures = recuperer_mesures_pour_analyse()
+    anomalies = detecter_anomalies(mesures)
+    objectifs_kpi_courants = charger_objectifs_kpi()
 
-for shift_base in shifts:
-    shift_id = shift_base[0]
-    date_debut = shift_base[1]
-    heure_debut = shift_base[2]
-    date_fin = shift_base[3]
-    heure_fin = shift_base[4]
-    poste = shift_base[5]
-    responsable_l1 = shift_base[6]
-    responsable_l2 = shift_base[7]
+    donnees_shifts = []
 
-    responsables_liste = fusionner_responsables(
-        responsable_l1,
-        responsable_l2,
-    )
+    for shift_base in shifts:
+        shift_id = shift_base[0]
+        date_debut = shift_base[1]
+        heure_debut = shift_base[2]
+        date_fin = shift_base[3]
+        heure_fin = shift_base[4]
+        poste = shift_base[5]
+        responsable_l1 = shift_base[6]
+        responsable_l2 = shift_base[7]
 
-    responsable = ", ".join(responsables_liste) if responsables_liste else "-"
+        responsables_liste = fusionner_responsables(
+            responsable_l1,
+            responsable_l2,
+        )
 
-    resultat = calculer_score_shift(shift_id)
-    sections = resultat["sections"]
+        responsable = (
+            ", ".join(responsables_liste)
+            if responsables_liste
+            else "-"
+        )
 
-    classable = (
-        resultat["score_global"] is not None
-        and resultat["couverture"] >= SEUIL_COUVERTURE_CLASSEMENT
-    )
+        resultat = calculer_score_shift(
+            shift_id,
+            anomalies=anomalies,
+            objectifs_kpi=objectifs_kpi_courants,
+        )
+        sections = resultat["sections"]
 
-    donnees_shifts.append(
-        {
-            "id": shift_id,
-            "date_debut": date_debut,
-            "heure_debut": heure_debut,
-            "date_fin": date_fin,
-            "heure_fin": heure_fin,
-            "poste": poste,
-            "responsable_l1": responsable_l1,
-            "responsable_l2": responsable_l2,
-            "responsable": responsable,
-            "responsables_liste": responsables_liste,
-            "score_cuisson": sections["cuisson"]["score"],
-            "score_broyeurs": sections["broyeurs"]["score"],
-            "score_environnement": sections["environnement"]["score"],
-            "score_compresseurs": sections["compresseurs"]["score"],
-            "score_global": resultat["score_global"],
-            "couverture": resultat["couverture"],
-            "anomalies": resultat["nombre_anomalies"],
-            "classable": classable,
-        }
-    )
+        classable = (
+            resultat["score_global"] is not None
+            and resultat["couverture"] >= SEUIL_COUVERTURE_CLASSEMENT
+        )
 
-df_shifts = pd.DataFrame(donnees_shifts)
+        donnees_shifts.append(
+            {
+                "id": shift_id,
+                "date_debut": date_debut,
+                "heure_debut": heure_debut,
+                "date_fin": date_fin,
+                "heure_fin": heure_fin,
+                "poste": poste,
+                "responsable_l1": responsable_l1,
+                "responsable_l2": responsable_l2,
+                "responsable_l1_affiche": responsable_l1,
+                "responsable_l2_affiche": responsable_l2,
+                "responsable": responsable,
+                "responsables_liste": responsables_liste,
+                "score_cuisson": sections["cuisson"]["score"],
+                "score_broyeurs": sections["broyeurs"]["score"],
+                "score_environnement": sections["environnement"]["score"],
+                "score_compresseurs": sections["compresseurs"]["score"],
+                "score_global": resultat["score_global"],
+                "couverture": resultat["couverture"],
+                "anomalies": resultat["nombre_anomalies"],
+                "classable": classable,
+            }
+        )
 
-if not df_shifts.empty:
-    df_shifts["date"] = pd.to_datetime(
-        df_shifts["date_debut"],
-        format="%d.%m.%Y",
-    )
-    df_shifts = df_shifts.sort_values(
-        ["date", "heure_debut"],
-        ascending=[False, False],
-    ).reset_index(drop=True)
+    df_shifts = pd.DataFrame(donnees_shifts)
+
+    if not df_shifts.empty:
+        df_shifts["date"] = pd.to_datetime(
+            df_shifts["date_debut"],
+            format="%d.%m.%Y",
+        )
+        df_shifts = df_shifts.sort_values(
+            ["date", "heure_debut"],
+            ascending=[False, False],
+        ).reset_index(drop=True)
+
+    return df_shifts, anomalies
+
+
+def vider_cache_dashboard():
+    charger_donnees_dashboard.clear()
+
+
+df_shifts, anomalies = charger_donnees_dashboard()
 
 
 # -------------------------------------------------------------------
 # Anomalies
 # -------------------------------------------------------------------
 
-mesures = recuperer_mesures_pour_analyse()
-anomalies = detecter_anomalies(mesures)
-
 if anomalies:
     df_anomalies = pd.DataFrame(anomalies)
 
     def preparer_responsables_anomalie(row):
-        responsables = fusionner_responsables(
+        return fusionner_responsables(
             row.get("responsable_l1"),
             row.get("responsable_l2"),
         )
-        return responsables
 
     df_anomalies["responsables_liste"] = df_anomalies.apply(
         preparer_responsables_anomalie,
@@ -195,6 +244,19 @@ if anomalies:
     )
     df_anomalies["responsable"] = df_anomalies["responsables_liste"].apply(
         lambda noms: ", ".join(noms) if noms else "-"
+    )
+
+    df_anomalies["kpi_affiche"] = df_anomalies.apply(
+        lambda row: (
+            str(row["nom_anomalie_personnalise"]).strip()
+            if pd.notna(row.get("nom_anomalie_personnalise"))
+            and str(row.get("nom_anomalie_personnalise")).strip()
+            else nom_anomalie_affiche(
+                row["kpi"],
+                libelles_affichage,
+            )
+        ),
+        axis=1,
     )
 else:
     df_anomalies = pd.DataFrame()
@@ -302,7 +364,7 @@ if page == "Vue générale":
             )
 
             apercu_anomalies = df_anomalies_actives[
-                ["date", "poste", "equipement", "kpi", "valeur"]
+                ["date", "poste", "equipement", "kpi_affiche", "valeur"]
             ].copy()
 
             apercu_anomalies.columns = [
@@ -373,6 +435,89 @@ elif page == "Shifts":
                     lambda responsables: responsable_selectionne in responsables
                 )
             ]
+
+        st.divider()
+        st.subheader("✏️ Modifier les responsables d'un shift")
+        st.caption(
+            "La modification concerne uniquement le shift sélectionné. "
+            "Les autres shifts ayant le même responsable ne sont pas modifiés."
+        )
+
+        if df_filtre.empty:
+            st.info("Aucun shift disponible avec ces filtres.")
+        else:
+            df_edition_shift = df_filtre.copy()
+
+            df_edition_shift["label_edition"] = (
+                df_edition_shift["date_debut"]
+                + " "
+                + df_edition_shift["heure_debut"]
+                + " | "
+                + df_edition_shift["poste"]
+                + " | "
+                + df_edition_shift["responsable"]
+            )
+
+            label_shift_edition = st.selectbox(
+                "Shift à modifier",
+                df_edition_shift["label_edition"].tolist(),
+                key="shift_a_modifier_responsables",
+            )
+
+            shift_edition = df_edition_shift[
+                df_edition_shift["label_edition"] == label_shift_edition
+            ].iloc[0]
+
+            responsable_l1_actuel = (
+                shift_edition["responsable_l1"]
+                if pd.notna(shift_edition["responsable_l1"])
+                else ""
+            )
+
+            responsable_l2_actuel = (
+                shift_edition["responsable_l2"]
+                if pd.notna(shift_edition["responsable_l2"])
+                else ""
+            )
+
+            col_l1, col_l2 = st.columns(2)
+
+            nouveau_l1_shift = col_l1.text_input(
+                "Responsable L1",
+                value=responsable_l1_actuel,
+                key=f"shift_l1_{int(shift_edition['id'])}",
+            )
+
+            nouveau_l2_shift = col_l2.text_input(
+                "Responsable L2",
+                value=responsable_l2_actuel,
+                key=f"shift_l2_{int(shift_edition['id'])}",
+            )
+
+            if st.button(
+                "Enregistrer pour ce shift uniquement",
+                use_container_width=True,
+                key="enregistrer_responsables_shift_selectionne",
+            ):
+                nouveau_l1_shift = normaliser_responsables(
+                    nouveau_l1_shift
+                )
+
+                nouveau_l2_shift = normaliser_responsables(
+                    nouveau_l2_shift
+                )
+
+                modifier_responsables_shift(
+                    int(shift_edition["id"]),
+                    nouveau_l1_shift,
+                    nouveau_l2_shift,
+                )
+                vider_cache_dashboard()
+
+                st.success(
+                    "Les responsables de ce shift uniquement ont été modifiés."
+                )
+                st.rerun()
 
         st.divider()
         st.subheader("📋 Historique")
@@ -866,6 +1011,15 @@ elif page == "Analyse détaillée":
 
         st.subheader("Responsables du shift")
 
+        st.write(
+            "**Responsable actuel du shift :**",
+            shift["responsable"],
+        )
+
+        st.caption(
+            "La modification ci-dessous concerne uniquement ce shift."
+        )
+
         responsable_l1_actuel = (
             shift["responsable_l1"]
             if pd.notna(shift["responsable_l1"])
@@ -879,8 +1033,9 @@ elif page == "Analyse détaillée":
         )
 
         st.caption(
-            "Vous pouvez corriger les noms. Si plusieurs personnes sont "
-            "réellement présentes, séparez-les par une virgule."
+            "Correction du rapport : si les responsables L1/L2 extraits "
+            "du PDF sont faux, corrigez-les ici. Si plusieurs personnes "
+            "sont réellement présentes, séparez-les par une virgule."
         )
 
         col_l1, col_l2 = st.columns(2)
@@ -904,6 +1059,7 @@ elif page == "Analyse détaillée":
                 nouveau_l1,
                 nouveau_l2,
             )
+            vider_cache_dashboard()
 
             st.success("Les responsables ont été mis à jour.")
             st.rerun()
@@ -973,12 +1129,19 @@ elif page == "Analyse détaillée":
         df_details = pd.DataFrame(details)
 
         if not df_details.empty:
+            df_details["kpi_affiche"] = df_details["kpi"].apply(
+                lambda kpi: nom_anomalie_affiche(
+                    kpi,
+                    libelles_affichage,
+                )
+            )
+
             df_details = df_details[
                 [
                     "section",
                     "equipement",
                     "produit",
-                    "kpi",
+                    "kpi_affiche",
                     "type",
                     "valeur",
                     "objectif",
@@ -1031,6 +1194,13 @@ elif page == "Analyse détaillée":
             ],
         )
 
+        df_mesures["KPI"] = df_mesures["KPI"].apply(
+            lambda kpi: nom_anomalie_affiche(
+                kpi,
+                libelles_affichage,
+            )
+        )
+
         st.dataframe(
             df_mesures,
             use_container_width=True,
@@ -1051,13 +1221,20 @@ elif page == "Analyse détaillée":
         else:
             df_anomalies_shift = pd.DataFrame(anomalies_shift)
 
+            df_anomalies_shift["kpi_affiche"] = df_anomalies_shift["kpi"].apply(
+                lambda kpi: nom_anomalie_affiche(
+                    kpi,
+                    libelles_affichage,
+                )
+            )
+
             st.dataframe(
                 df_anomalies_shift[
                     [
                         "section",
                         "equipement",
                         "produit",
-                        "kpi",
+                        "kpi_affiche",
                         "valeur",
                         "mediane",
                         "score_anomalie",
@@ -1076,15 +1253,21 @@ elif page == "Analyse détaillée":
 elif page == "Anomalies":
     st.title("⚠️ Valeurs suspectes")
     st.write(
-        "Les anomalies sont détectées automatiquement. Vous pouvez ensuite "
-        "accepter une valeur comme valide ou confirmer qu'il s'agit bien "
-        "d'une anomalie."
+        "Les anomalies sont détectées automatiquement avec la méthode MAD. "
+        "Vous pouvez modifier leur nom affiché, leur score affiché et leur décision."
+    )
+
+    st.info(
+        "Le score calculé automatiquement reste conservé. "
+        "Le score personnalisé sert uniquement à l'affichage de l'anomalie "
+        "et ne modifie pas le score de performance du shift."
     )
 
     if df_anomalies.empty:
         st.success("Aucune valeur suspecte détectée.")
     else:
         st.subheader("Période")
+
         df_filtre = filtrer_par_periode(
             df_anomalies,
             "date",
@@ -1108,7 +1291,9 @@ elif page == "Anomalies":
             }
         )
 
-        sections = sorted(df_filtre["section"].dropna().unique())
+        sections = sorted(
+            df_filtre["section"].dropna().unique()
+        )
 
         filtre_poste = col1.selectbox(
             "Poste",
@@ -1162,15 +1347,18 @@ elif page == "Anomalies":
                 "section",
                 "equipement",
                 "produit",
-                "kpi",
+                "kpi_affiche",
                 "valeur",
                 "mediane",
+                "score_anomalie_calcule",
                 "score_anomalie",
                 "decision",
             ]
         ].copy()
 
-        edition["decision"] = edition["decision"].map(labels_decision)
+        edition["decision"] = edition["decision"].map(
+            labels_decision
+        )
 
         edition.columns = [
             "Shift ID",
@@ -1180,9 +1368,10 @@ elif page == "Anomalies":
             "Section",
             "Équipement",
             "Produit",
-            "KPI",
+            "Nom anomalie",
             "Valeur",
             "Médiane",
+            "Score calculé",
             "Score anomalie",
             "Décision",
         ]
@@ -1200,12 +1389,22 @@ elif page == "Anomalies":
                 "Section",
                 "Équipement",
                 "Produit",
-                "KPI",
                 "Valeur",
                 "Médiane",
-                "Score anomalie",
+                "Score calculé",
             ],
             column_config={
+                "Nom anomalie": st.column_config.TextColumn(
+                    "Nom anomalie",
+                    required=True,
+                ),
+                "Score anomalie": st.column_config.NumberColumn(
+                    "Score anomalie",
+                    min_value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                    required=True,
+                ),
                 "Décision": st.column_config.SelectboxColumn(
                     "Décision",
                     options=[
@@ -1214,38 +1413,101 @@ elif page == "Anomalies":
                         "Anomalie confirmée",
                     ],
                     required=True,
-                )
+                ),
             },
-            key="editeur_anomalies",
+            key="editeur_anomalies_complet",
         )
 
-        if st.button(
-            "Enregistrer les décisions",
+        col1, col2 = st.columns(2)
+
+        if col1.button(
+            "Enregistrer les modifications",
             use_container_width=True,
         ):
-            for _, ligne in edition_modifiee.iterrows():
-                decision = codes_decision[ligne["Décision"]]
+            for index, ligne in edition_modifiee.iterrows():
+                source = df_filtre.loc[index]
 
-                produit = ligne["Produit"]
+                produit = source["produit"]
                 if pd.isna(produit) or str(produit).strip() == "":
                     produit = None
 
-                equipement = ligne["Équipement"]
+                equipement = source["equipement"]
                 if pd.isna(equipement) or str(equipement).strip() == "":
                     equipement = None
 
-                enregistrer_decision_anomalie(
-                    int(ligne["Shift ID"]),
-                    ligne["Section"],
+                nom_original = nom_anomalie_affiche(
+                    source["kpi"],
+                    libelles_affichage,
+                )
+
+                nom_modifie = str(
+                    ligne["Nom anomalie"]
+                ).strip()
+
+                nom_personnalise = (
+                    None
+                    if nom_modifie == nom_original
+                    else nom_modifie
+                )
+
+                score_calcule = float(
+                    source["score_anomalie_calcule"]
+                )
+
+                score_modifie = float(
+                    ligne["Score anomalie"]
+                )
+
+                score_personnalise = (
+                    None
+                    if abs(score_modifie - score_calcule) < 0.000001
+                    else score_modifie
+                )
+
+                enregistrer_personnalisation_anomalie(
+                    int(source["shift_id"]),
+                    source["section"],
                     equipement,
                     produit,
-                    ligne["KPI"],
-                    decision,
+                    source["kpi"],
+                    codes_decision[ligne["Décision"]],
+                    nom_personnalise,
+                    score_personnalise,
                 )
 
             st.success(
-                "Décisions enregistrées. Les scores sont recalculés "
-                "automatiquement."
+                "Noms, scores et décisions enregistrés."
+            )
+            st.rerun()
+
+        if col2.button(
+            "Réinitialiser les noms et scores visibles",
+            use_container_width=True,
+        ):
+            for index, ligne in edition_modifiee.iterrows():
+                source = df_filtre.loc[index]
+
+                produit = source["produit"]
+                if pd.isna(produit) or str(produit).strip() == "":
+                    produit = None
+
+                equipement = source["equipement"]
+                if pd.isna(equipement) or str(equipement).strip() == "":
+                    equipement = None
+
+                enregistrer_personnalisation_anomalie(
+                    int(source["shift_id"]),
+                    source["section"],
+                    equipement,
+                    produit,
+                    source["kpi"],
+                    source["decision"],
+                    None,
+                    None,
+                )
+
+            st.success(
+                "Les noms et scores calculés d'origine ont été restaurés."
             )
             st.rerun()
 
@@ -1312,7 +1574,11 @@ elif page == "Paramètres du scoring":
                 "Section": section,
                 "Équipement": equipement,
                 "Produit": produit if produit is not None else "",
-                "KPI": kpi,
+                "KPI interne": kpi,
+                "KPI": nom_anomalie_affiche(
+                    kpi,
+                    libelles_affichage,
+                ),
                 "Type": configuration_complete.get("type"),
                 "Actif": bool(configuration_specifique.get("actif", False)),
                 "Objectif": configuration_specifique.get("objectif"),
@@ -1334,10 +1600,12 @@ elif page == "Paramètres du scoring":
             "Section",
             "Équipement",
             "Produit",
+            "KPI interne",
             "KPI",
             "Type",
         ],
         column_config={
+            "KPI interne": None,
             "Actif": st.column_config.CheckboxColumn("Actif"),
             "Objectif": st.column_config.NumberColumn("Objectif"),
             "Limite": st.column_config.NumberColumn("Limite"),
@@ -1376,7 +1644,7 @@ elif page == "Paramètres du scoring":
                 str(ligne["Section"]),
                 str(ligne["Équipement"]),
                 produit,
-                str(ligne["KPI"]),
+                str(ligne["KPI interne"]),
             )
 
             type_kpi = str(ligne["Type"])
@@ -1411,6 +1679,7 @@ elif page == "Paramètres du scoring":
                 st.write(f"- {probleme}")
         else:
             sauvegarder_objectifs_kpi(nouveaux_objectifs)
+            vider_cache_dashboard()
             st.success(
                 "Paramètres enregistrés. Les scores vont être recalculés."
             )
@@ -1421,9 +1690,14 @@ elif page == "Paramètres du scoring":
         use_container_width=True,
     ):
         reinitialiser_objectifs_kpi()
+        vider_cache_dashboard()
         st.success("Les paramètres par défaut ont été restaurés.")
         st.rerun()
 
+
+# -------------------------------------------------------------------
+# Gestion des noms
+# -------------------------------------------------------------------
 
 # -------------------------------------------------------------------
 # Export CSV
@@ -1576,6 +1850,7 @@ elif page == "Import PDF":
                         f"Ce shift est déjà présent dans la base (ID {shift_id}).",
                     )
 
+                vider_cache_dashboard()
                 st.rerun()
 
             except ValueError as erreur:
