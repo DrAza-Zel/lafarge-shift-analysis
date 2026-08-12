@@ -1,8 +1,7 @@
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
-
-from src.kpi_config import CONFIG_KPI
 
 
 POIDS_SECTIONS = {
@@ -14,444 +13,357 @@ POIDS_SECTIONS = {
 
 SEUIL_COUVERTURE_CLASSEMENT = 90
 
-FICHIER_PARAMETRES = (
-    Path(__file__).resolve().parent.parent
-    / "database"
-    / "scoring_config.json"
-)
+
+# -------------------------------------------------------------------
+# Fichier de configuration persistant
+# -------------------------------------------------------------------
+# Ce fichier est local à l'installation de l'application et doit rester
+# ignoré par Git. Il contient les formules choisies depuis Streamlit.
+RACINE_PROJET = Path(__file__).resolve().parent.parent
+DOSSIER_DATABASE = RACINE_PROJET / "database"
+FICHIER_CONFIG_SCORING = DOSSIER_DATABASE / "scoring_config.json"
+VERSION_CONFIG_SCORING = 1
 
 
-DEFAULT_OBJECTIFS_KPI = {
-    ("cuisson", "Kiln 1", None, "STEC (Mj/t)"): {
-        "actif": True,
-        "objectif": 4050,
-        "limite": 4300,
-        "poids": 15,
-    },
-    ("cuisson", "Kiln 1", None, "SEEC (kwh/t)"): {
-        "actif": True,
-        "objectif": 36,
-        "limite": 40,
-        "poids": 10,
-    },
-    ("cuisson", "Kiln 1", None, "Number of stops (#)"): {
-        "actif": True,
-        "objectif": 0,
-        "limite": 2,
-        "poids": 8,
-    },
-    ("cuisson", "Kiln 1", None, "CaO libre (%)"): {
-        "actif": True,
-        "cible": 2.0,
-        "tolerance": 0.8,
-        "poids": 6,
-    },
-    ("cuisson", "Kiln 1", None, "LSF (%)"): {
-        "actif": True,
-        "cible": 98.5,
-        "tolerance": 1.5,
-        "poids": 6,
-    },
+# -------------------------------------------------------------------
+# Formules Excel d'origine
+# -------------------------------------------------------------------
+# Syntaxe volontairement proche d'Excel FR :
+# - séparateur d'arguments : ;
+# - décimales : ,
+# - fonctions : MIN, MAX, ABS, IF, IFERROR, AND, OR, ROUND, SQRT
+#
+# Les noms comme RUNNING_HOURS, FEED_RATE, etc. remplacent les références
+# de cellules Excel. Ils sont reliés aux KPI extraits du PDF plus bas.
 
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55 (Dwam)", "SEEC (kwh/t)"): {
-        "actif": True,
-        "objectif": 40,
-        "limite": 45,
-        "poids": 12,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55 (Dwam)", "Arrêt (#)"): {
-        "actif": True,
-        "objectif": 0,
-        "limite": 2,
-        "poids": 8,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55 (Dwam)", "Débit (t/h)"): {
-        "actif": True,
-        "objectif": 75,
-        "limite": 60,
-        "poids": 6,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55 (Dwam)", "K/C fab (%)"): {
-        "actif": True,
-        "cible": 64,
-        "tolerance": 4,
-        "poids": 4,
-    },
+FORMULES_SCORING = {
+    "RAW_MILL": """=(
+MIN(100;(RUNNING_HOURS/8)*100)*0,25 +
+MAX(0;100-(STOPS*15))*0,10 +
+MIN(100;(FEED_RATE/180)*100)*0,25 +
+MIN(100;(PRODUCTION/1300)*100)*0,20 +
+MAX(0;100-ABS(HLC-100))*0,10 +
+MIN(100;(15/SEEC)*100)*0,10
+)""",
 
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55PM (PMF)", "SEEC (kwh/t)"): {
-        "actif": True,
-        "objectif": 45,
-        "limite": 50,
-        "poids": 12,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55PM (PMF)", "Arrêt (#)"): {
-        "actif": True,
-        "objectif": 0,
-        "limite": 2,
-        "poids": 8,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55PM (PMF)", "Débit (t/h)"): {
-        "actif": True,
-        "objectif": 65,
-        "limite": 50,
-        "poids": 6,
-    },
-    ("broyeurs", "Broyeur Ciments 1", "CPJ55PM (PMF)", "K/C fab (%)"): {
-        "actif": True,
-        "cible": 87,
-        "tolerance": 4,
-        "poids": 4,
-    },
+    "KILN": """=(
+MIN(100;(RUNNING_HOURS/8)*100)*0,10 +
+MAX(0;100-(STOPS*15))*0,10 +
+MIN(100;(FEED_RATE/160)*100)*0,10 +
+MIN(100;(PRODUCTION/800)*100)*0,10 +
+IFERROR(MIN(100;(3300/STEC)*100);100)*0,15 +
+IFERROR(MIN(100;(TSR/50)*100);100)*0,10 +
+IFERROR(MAX(0;100-ABS(HLC-100));100)*0,05 +
+IFERROR(MIN(100;(PELITE/24)*100);100)*0,10 +
+IFERROR(MIN(100;(30/SEEC)*100);100)*0,05 +
+IFERROR(MIN(100;(1,5/CAO)*100);100)*0,10 +
+IFERROR(IF(AND(LSF>=98;LSF<=100);100;MAX(0;100-ABS(LSF-99)*10));100)*0,05
+)""",
 
-    ("broyeurs", "Broyeur Ciments 2", "CPJ55 (Dwam)", "SEEC (kwh/t)"): {
-        "actif": True,
-        "objectif": 36,
-        "limite": 42,
-        "poids": 12,
-    },
-    ("broyeurs", "Broyeur Ciments 2", "CPJ55 (Dwam)", "Arrêt (#)"): {
-        "actif": True,
-        "objectif": 0,
-        "limite": 2,
-        "poids": 8,
-    },
-    ("broyeurs", "Broyeur Ciments 2", "CPJ55 (Dwam)", "Débit (t/h)"): {
-        "actif": True,
-        "objectif": 80,
-        "limite": 65,
-        "poids": 6,
-    },
-    ("broyeurs", "Broyeur Ciments 2", "CPJ55 (Dwam)", "K/C fab (%)"): {
-        "actif": True,
-        "cible": 64,
-        "tolerance": 4,
-        "poids": 4,
-    },
+    "COAL_MILL": """=(
+MIN(100;(RUNNING_HOURS/6)*100)*0,25 +
+MAX(0;100-(STOPS*15))*0,20 +
+MIN(100;(FEED_RATE/9)*100)*0,15 +
+MIN(100;(PRODUCTION/40)*100)*0,20 +
+MIN(100;(100/SEEC)*100)*0,20
+)""",
 
-    ("environnement", "Emission Kiln 1", None, "NNC Dust (#)"): {
-        "actif": True,
-        "limite": 0,
-        "poids": 4,
-    },
-    ("environnement", "Emission Kiln 1", None, "NNC NOx (#)"): {
-        "actif": True,
-        "limite": 0,
-        "poids": 4,
-    },
-    ("environnement", "Emission Kiln 1", None, "NNC SO2 (#)"): {
-        "actif": True,
-        "limite": 0,
-        "poids": 4,
-    },
-    ("environnement", "Emission Kiln 1", None, "NNC VOC (#)"): {
-        "actif": True,
-        "limite": 0,
-        "poids": 4,
-    },
-    ("environnement", "Emission Kiln 1", None, "NNC HLC (#)"): {
-        "actif": True,
-        "limite": 0,
-        "poids": 4,
-    },
+    "BROYEUR_CIMENT": """=(
+MIN(100;(HM/8)*100)*0,10 +
+MAX(0;100-(STOPS*15))*0,10 +
+MIN(100;(PRODUCTION/600)*100)*0,10 +
+MIN(100;(DEBIT/75)*100)*0,10 +
+IFERROR(MIN(100;(40/SEEC)*100);100)*0,10 +
+MIN(100;(HM_CP/8)*100)*0,10 +
+MAX(0;100-ABS(K_C_FAB-100))*0,10 +
+IFERROR(MIN(100;(300/ADJUVANT_RESIST)*100);100)*0,10 +
+IFERROR(MIN(100;(2/ADJUVANT_DEBIT)*100);100)*0,10 +
+MAX(0;100-ABS(MM-100))*0,10
+)""",
 
-    ("compresseurs", "Kiln 1", None, "PRESSION (bar)"): {
-        "actif": True,
-        "cible": 5.0,
-        "tolerance": 0.5,
-        "poids": 5,
+    "ENVIRONNEMENT": """=(
+IFERROR(MIN(100;(800/NOX)*100);100)*0,15 +
+MAX(0;100-(NNC_NOX*25))*0,10 +
+IFERROR(MIN(100;(50/SO2)*100);100)*0,15 +
+MAX(0;100-(NNC_SO2*25))*0,10 +
+IFERROR(MIN(100;(15/VOC)*100);100)*0,10 +
+MAX(0;100-(NNC_VOC*25))*0,05 +
+IFERROR(MIN(100;(10/HLC)*100);100)*0,10 +
+MAX(0;100-(NNC_HLC*25))*0,05 +
+IFERROR(MIN(100;(20/DUST)*100);100)*0,10 +
+MAX(0;100-(NNC_DUST*25))*0,10
+)""",
+
+    "COMPRESSEUR": """=(
+MIN(100;(HM_CP1/8)*100)*0,20 +
+MIN(100;(HM_CP2/8)*100)*0,20 +
+MIN(100;(HM_CP3/8)*100)*0,20 +
+MIN(100;(HM_CP4/8)*100)*0,20 +
+MIN(100;(PRESSION/6)*100)*0,20
+)""",
+}
+
+
+EQUIPEMENTS_PAR_FORMULE = {
+    "RAW_MILL": "Raw mill 1 / Raw mill 2",
+    "KILN": "Kiln 1 / Kiln 2",
+    "COAL_MILL": "Coal mill 1 / Coal mill 2",
+    "BROYEUR_CIMENT": "Broyeur Ciments 1 / Broyeur Ciments 2",
+    "ENVIRONNEMENT": "Emission Kiln 1 / Emission Kiln 2",
+    "COMPRESSEUR": "Compresseur Kiln 1 / Compresseur Kiln 2",
+}
+
+
+# Les équipements 2 utilisent exactement les mêmes formules que les 1.
+MAPPING_FORMULES = {
+    ("cuisson", "Raw mill 1"): "RAW_MILL",
+    ("cuisson", "Raw mill 2"): "RAW_MILL",
+    ("cuisson", "Kiln 1"): "KILN",
+    ("cuisson", "Kiln 2"): "KILN",
+    ("cuisson", "Coal mill 1"): "COAL_MILL",
+    ("cuisson", "Coal mill 2"): "COAL_MILL",
+    ("broyeurs", "Broyeur Ciments 1"): "BROYEUR_CIMENT",
+    ("broyeurs", "Broyeur Ciments 2"): "BROYEUR_CIMENT",
+    ("environnement", "Emission Kiln 1"): "ENVIRONNEMENT",
+    ("environnement", "Emission Kiln 2"): "ENVIRONNEMENT",
+    ("compresseurs", "Kiln 1"): "COMPRESSEUR",
+    ("compresseurs", "Kiln 2"): "COMPRESSEUR",
+}
+
+
+# Variable utilisable dans la formule -> nom exact du KPI dans la base.
+VARIABLES_SCORING = {
+    "RAW_MILL": {
+        "RUNNING_HOURS": "Running Hours (h)",
+        "STOPS": "Number of stops (#)",
+        "FEED_RATE": "Feed rate (t/h)",
+        "PRODUCTION": "Production (t)",
+        "HLC": "HLC (%)",
+        "SEEC": "SEEC (kwh/t)",
     },
-    ("compresseurs", "Kiln 2", None, "PRESSION (bar)"): {
-        "actif": True,
-        "cible": 5.0,
-        "tolerance": 0.5,
-        "poids": 5,
+    "KILN": {
+        "RUNNING_HOURS": "Running Hours (h)",
+        "STOPS": "Number of stops (#)",
+        "FEED_RATE": "Feed rate (t/h)",
+        "PRODUCTION": "Production (t)",
+        "STEC": "STEC (Mj/t)",
+        "TSR": "TSR (%)",
+        "HLC": "HLC (%)",
+        "PELITE": "Pélite Calcinée (t)",
+        "SEEC": "SEEC (kwh/t)",
+        "CAO": "CaO libre (%)",
+        "LSF": "LSF (%)",
+    },
+    "COAL_MILL": {
+        "RUNNING_HOURS": "Running Hours (h)",
+        "STOPS": "Number of stops (#)",
+        "FEED_RATE": "Feed rate (t/h)",
+        "PRODUCTION": "Production (t)",
+        "SEEC": "SEEC (kwh/t)",
+    },
+    "BROYEUR_CIMENT": {
+        "HM": "HM (h)",
+        "STOPS": "Arrêt (#)",
+        "PRODUCTION": "Production (tonne)",
+        "DEBIT": "Débit (t/h)",
+        "SEEC": "SEEC (kwh/t)",
+        "HM_CP": "HM CP (h)",
+        "K_C_FAB": "K/C fab (%)",
+        "ADJUVANT_RESIST": "Adjuvant Resist (g/t)",
+        "ADJUVANT_DEBIT": "Adjuvant Débit (g/t)",
+        "MM": "MM (%)",
+    },
+    "ENVIRONNEMENT": {
+        "NOX": "NOx (mg/Nm3)",
+        "NNC_NOX": "NNC NOx (#)",
+        "SO2": "SO2 (mg/Nm3)",
+        "NNC_SO2": "NNC SO2 (#)",
+        "VOC": "VOC (mg/Nm3)",
+        "NNC_VOC": "NNC VOC (#)",
+        "HLC": "HLC (mg/Nm3)",
+        "NNC_HLC": "NNC HLC (#)",
+        "DUST": "Dust (mg/Nm3)",
+        "NNC_DUST": "NNC Dust (#)",
+    },
+    "COMPRESSEUR": {
+        "HM_CP1": "HM CP1 (h)",
+        "HM_CP2": "HM CP2 (h)",
+        "HM_CP3": "HM CP3 (h)",
+        "HM_CP4": "HM CP4 (h)",
+        "PRESSION": "PRESSION (bar)",
     },
 }
 
 
-# Compatibilité avec le reste du projet.
-# Le scoring utilise charger_objectifs_kpi() pour récupérer les valeurs actuelles.
-OBJECTIFS_KPI = DEFAULT_OBJECTIFS_KPI
+CRITERES_ACTIVITE = {
+    "cuisson": "Running Hours (h)",
+    "broyeurs": "HM (h)",
+}
+
+
+VALEURS_FORCEES = {}
+
+
+# -------------------------------------------------------------------
+# Persistance des formules personnalisées
+# -------------------------------------------------------------------
+
+def _nettoyer_formules(formules):
+    """
+    Conserve uniquement les familles connues.
+    Une famille absente ou invalide reprend sa formule Excel d'origine.
+    """
+    resultat = deepcopy(FORMULES_SCORING)
+
+    if not isinstance(formules, dict):
+        return resultat
+
+    for nom_formule in FORMULES_SCORING:
+        valeur = formules.get(nom_formule)
+        if isinstance(valeur, str) and valeur.strip():
+            resultat[nom_formule] = valeur
+
+    return resultat
 
 
 def charger_objectifs_kpi():
-    objectifs = deepcopy(DEFAULT_OBJECTIFS_KPI)
+    """
+    Charge les formules persistantes enregistrées depuis Streamlit.
 
-    if not FICHIER_PARAMETRES.exists():
-        return objectifs
+    Si le fichier n'existe pas, est illisible ou incomplet, les formules Excel
+    d'origine sont utilisées. Cette fonction ne modifie jamais la base SQLite.
+    """
+    if not FICHIER_CONFIG_SCORING.exists():
+        return deepcopy(FORMULES_SCORING)
 
     try:
-        with open(FICHIER_PARAMETRES, "r", encoding="utf-8") as fichier:
+        with FICHIER_CONFIG_SCORING.open("r", encoding="utf-8") as fichier:
             donnees = json.load(fichier)
     except (OSError, json.JSONDecodeError):
-        return objectifs
+        return deepcopy(FORMULES_SCORING)
 
-    for ligne in donnees:
-        cle = (
-            ligne["section"],
-            ligne["equipement"],
-            ligne.get("produit"),
-            ligne["kpi"],
-        )
+    # Nouveau format : {"version": 1, "formules": {...}}
+    if isinstance(donnees, dict) and "formules" in donnees:
+        return _nettoyer_formules(donnees.get("formules"))
 
-        objectifs[cle] = ligne["configuration"]
-
-    return objectifs
+    # Compatibilité avec un éventuel ancien JSON contenant directement
+    # le dictionnaire des formules.
+    return _nettoyer_formules(donnees)
 
 
-def sauvegarder_objectifs_kpi(objectifs):
-    FICHIER_PARAMETRES.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+def sauvegarder_objectifs_kpi(formules):
+    """
+    Enregistre les formules de manière permanente dans
+    database/scoring_config.json.
 
-    donnees = []
+    L'écriture passe par un fichier temporaire puis os.replace afin d'éviter
+    de laisser un JSON partiellement écrit si l'application est interrompue.
+    """
+    formules_nettoyees = _nettoyer_formules(formules)
+    DOSSIER_DATABASE.mkdir(parents=True, exist_ok=True)
 
-    for cle, configuration in objectifs.items():
-        section, equipement, produit, kpi = cle
+    donnees = {
+        "version": VERSION_CONFIG_SCORING,
+        "formules": formules_nettoyees,
+    }
 
-        donnees.append(
-            {
-                "section": section,
-                "equipement": equipement,
-                "produit": produit,
-                "kpi": kpi,
-                "configuration": configuration,
-            }
-        )
+    fichier_temporaire = FICHIER_CONFIG_SCORING.with_suffix(".json.tmp")
 
-    with open(FICHIER_PARAMETRES, "w", encoding="utf-8") as fichier:
-        json.dump(
-            donnees,
-            fichier,
-            ensure_ascii=False,
-            indent=2,
-        )
+    try:
+        with fichier_temporaire.open("w", encoding="utf-8") as fichier:
+            json.dump(
+                donnees,
+                fichier,
+                ensure_ascii=False,
+                indent=2,
+            )
+        os.replace(fichier_temporaire, FICHIER_CONFIG_SCORING)
+    finally:
+        if fichier_temporaire.exists():
+            try:
+                fichier_temporaire.unlink()
+            except OSError:
+                pass
 
-
-def reinitialiser_objectifs_kpi():
-    if FICHIER_PARAMETRES.exists():
-        FICHIER_PARAMETRES.unlink()
+    return deepcopy(formules_nettoyees)
 
 
-def obtenir_configuration_complete(
-    section,
-    equipement,
-    produit,
-    kpi,
-    objectifs=None,
-):
-    configuration_generale = CONFIG_KPI.get(kpi)
+def reinitialiser_objectifs_kpi(nom_formule=None):
+    """
+    Restaure une famille ou toutes les familles aux formules Excel d'origine,
+    puis sauvegarde immédiatement la restauration dans le JSON persistant.
+    """
+    if nom_formule is None:
+        nouvelles_formules = deepcopy(FORMULES_SCORING)
+    else:
+        if nom_formule not in FORMULES_SCORING:
+            raise KeyError(f"Famille de scoring inconnue : {nom_formule}")
 
-    if configuration_generale is None:
+        nouvelles_formules = charger_objectifs_kpi()
+        nouvelles_formules[nom_formule] = FORMULES_SCORING[nom_formule]
+
+    return sauvegarder_objectifs_kpi(nouvelles_formules)
+
+
+def obtenir_nom_formule(section, equipement):
+    return MAPPING_FORMULES.get((section, equipement))
+
+
+def obtenir_formule(section, equipement, objectifs=None):
+    nom_formule = obtenir_nom_formule(section, equipement)
+    if nom_formule is None:
         return None
 
-    configuration = configuration_generale.copy()
-    configuration["actif"] = False
-
-    if objectifs is None:
-        objectifs = charger_objectifs_kpi()
-
-    cle = (
-        section,
-        equipement,
-        produit,
-        kpi,
-    )
-
-    configuration_specifique = objectifs.get(cle)
-
-    if configuration_specifique is not None:
-        configuration.update(configuration_specifique)
-
-    return configuration
+    source = charger_objectifs_kpi() if objectifs is None else objectifs
+    formule = source.get(nom_formule)
+    return None if formule is None else str(formule)
 
 
-def valider_objectifs_kpi(objectifs):
-    problemes = []
-
-    for cle, configuration_specifique in objectifs.items():
-        section, equipement, produit, kpi = cle
-
-        configuration = obtenir_configuration_complete(
-            section,
-            equipement,
-            produit,
-            kpi,
-            objectifs=objectifs,
-        )
-
-        if configuration is None:
-            problemes.append(
-                f"{section} | {equipement} | {kpi} : KPI inconnu."
-            )
-            continue
-
-        if not configuration.get("actif", False):
-            continue
-
-        poids = configuration.get("poids")
-
-        if poids is None or poids <= 0:
-            problemes.append(
-                f"{section} | {equipement} | {kpi} : poids invalide."
-            )
-
-        type_kpi = configuration.get("type")
-
-        if type_kpi == "minimiser":
-            objectif = configuration.get("objectif")
-            limite = configuration.get("limite")
-
-            if objectif is None or limite is None:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : objectif ou limite manquant."
-                )
-            elif limite <= objectif:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : la limite doit être supérieure à l'objectif."
-                )
-
-        elif type_kpi == "maximiser":
-            objectif = configuration.get("objectif")
-            limite = configuration.get("limite")
-
-            if objectif is None or limite is None:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : objectif ou limite manquant."
-                )
-            elif objectif <= limite:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : l'objectif doit être supérieur à la limite."
-                )
-
-        elif type_kpi == "cible":
-            cible = configuration.get("cible")
-            tolerance = configuration.get("tolerance")
-
-            if cible is None or tolerance is None:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : cible ou tolérance manquante."
-                )
-            elif tolerance <= 0:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : la tolérance doit être positive."
-                )
-
-        elif type_kpi == "conformite":
-            if configuration.get("limite") is None:
-                problemes.append(
-                    f"{section} | {equipement} | {kpi} : limite manquante."
-                )
-
-    return problemes
+def obtenir_variables_formule(nom_formule):
+    return deepcopy(VARIABLES_SCORING.get(nom_formule, {}))
 
 
-def verifier_configuration_scoring(kpis_disponibles):
-    problemes = []
-    objectifs = charger_objectifs_kpi()
+def obtenir_formule_originale(nom_formule):
+    formule = FORMULES_SCORING.get(nom_formule)
+    return None if formule is None else str(formule)
 
-    for ligne in kpis_disponibles:
-        section = ligne[0]
-        equipement = ligne[1]
-        produit = ligne[2]
-        kpi = ligne[3]
 
-        configuration = obtenir_configuration_complete(
-            section,
-            equipement,
-            produit,
-            kpi,
-            objectifs=objectifs,
-        )
+def tableau_referentiel_scoring(objectifs=None):
+    source = charger_objectifs_kpi() if objectifs is None else objectifs
+    lignes = []
 
-        if configuration is None:
-            problemes.append(
+    for nom_formule, formule in source.items():
+        variables = VARIABLES_SCORING.get(nom_formule, {})
+        for variable, kpi in variables.items():
+            lignes.append(
                 {
-                    "section": section,
-                    "equipement": equipement,
-                    "produit": produit,
-                    "kpi": kpi,
-                    "probleme": "KPI non configuré",
-                }
-            )
-            continue
-
-        type_kpi = configuration.get("type")
-
-        if type_kpi == "information":
-            continue
-
-        if not configuration.get("actif"):
-            continue
-
-        if type_kpi in ("minimiser", "maximiser"):
-            if configuration.get("objectif") is None:
-                problemes.append(
-                    {
-                        "section": section,
-                        "equipement": equipement,
-                        "produit": produit,
-                        "kpi": kpi,
-                        "probleme": "Objectif manquant",
-                    }
-                )
-
-            if configuration.get("limite") is None:
-                problemes.append(
-                    {
-                        "section": section,
-                        "equipement": equipement,
-                        "produit": produit,
-                        "kpi": kpi,
-                        "probleme": "Limite manquante",
-                    }
-                )
-
-        elif type_kpi == "cible":
-            if configuration.get("cible") is None:
-                problemes.append(
-                    {
-                        "section": section,
-                        "equipement": equipement,
-                        "produit": produit,
-                        "kpi": kpi,
-                        "probleme": "Cible manquante",
-                    }
-                )
-
-            if configuration.get("tolerance") is None:
-                problemes.append(
-                    {
-                        "section": section,
-                        "equipement": equipement,
-                        "produit": produit,
-                        "kpi": kpi,
-                        "probleme": "Tolérance manquante",
-                    }
-                )
-
-        elif type_kpi == "conformite":
-            if configuration.get("limite") is None:
-                problemes.append(
-                    {
-                        "section": section,
-                        "equipement": equipement,
-                        "produit": produit,
-                        "kpi": kpi,
-                        "probleme": "Limite manquante",
-                    }
-                )
-
-        if configuration.get("poids") is None:
-            problemes.append(
-                {
-                    "section": section,
-                    "equipement": equipement,
-                    "produit": produit,
-                    "kpi": kpi,
-                    "probleme": "Poids manquant",
+                    "Famille": nom_formule,
+                    "Équipement(s)": EQUIPEMENTS_PAR_FORMULE.get(
+                        nom_formule,
+                        nom_formule,
+                    ),
+                    "Variable": variable,
+                    "KPI extrait": kpi,
+                    "Formule active": formule,
                 }
             )
 
-    return problemes
+    return lignes
+
+
+def obtenir_configuration_complete(section, equipement, produit, kpi, objectifs=None):
+    del produit
+    nom_formule = obtenir_nom_formule(section, equipement)
+    if nom_formule is None:
+        return None
+
+    variables = VARIABLES_SCORING.get(nom_formule, {})
+    for variable, nom_kpi in variables.items():
+        if nom_kpi == kpi:
+            return {
+                "famille": nom_formule,
+                "variable": variable,
+                "kpi": nom_kpi,
+                "formule": obtenir_formule(section, equipement, objectifs),
+            }
+    return None
