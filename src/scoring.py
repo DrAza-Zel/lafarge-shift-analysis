@@ -20,6 +20,25 @@ SECTIONS = (
 )
 
 
+# Les 12 zones possibles du score total du shift.
+# Une zone absente, inactive, non calculable ou dont le score vaut 0 n'entre pas
+# dans la moyenne. Le dénominateur est donc le nombre de scores strictement > 0.
+EQUIPEMENTS_SCORE_TOTAL = [
+    ("cuisson", "Raw mill 1", "Raw mill 1"),
+    ("cuisson", "Raw mill 2", "Raw mill 2"),
+    ("cuisson", "Kiln 1", "Kiln 1"),
+    ("cuisson", "Kiln 2", "Kiln 2"),
+    ("cuisson", "Coal mill 1", "Coal mill 1"),
+    ("cuisson", "Coal mill 2", "Coal mill 2"),
+    ("broyeurs", "Broyeur Ciments 1", "Broyeur Ciments 1"),
+    ("broyeurs", "Broyeur Ciments 2", "Broyeur Ciments 2"),
+    ("environnement", "Emission Kiln 1", "Emission Kiln 1"),
+    ("environnement", "Emission Kiln 2", "Emission Kiln 2"),
+    ("compresseurs", "Kiln 1", "Compresseur Kiln 1"),
+    ("compresseurs", "Kiln 2", "Compresseur Kiln 2"),
+]
+
+
 class ErreurFormule(ValueError):
     pass
 
@@ -485,6 +504,72 @@ def _moyenne_section(groupes_section):
     return round(sum(scores) / len(scores), 2)
 
 
+def _score_resume_zone(resultats_groupes, section, equipement):
+    """
+    Retourne le score d'une des 12 zones.
+
+    Pour les broyeurs, si plusieurs produits existent pour le même équipement
+    sur un shift, on prend la moyenne de leurs scores calculables. Si aucune
+    valeur calculable n'existe, la zone vaut 0 pour le score total.
+    """
+    scores = [
+        float(groupe["score"])
+        for groupe in resultats_groupes
+        if groupe["section"] == section
+        and groupe["equipement"] == equipement
+        and groupe["actif"]
+        and groupe["score"] is not None
+    ]
+
+    if not scores:
+        return 0.0
+
+    return round(sum(scores) / len(scores), 8)
+
+
+def calculer_score_total_12(resultats_groupes):
+    """
+    Calcule le score total du shift sur les 12 zones possibles.
+
+    Nouvelle règle métier :
+    - chaque zone garde son score calculé ;
+    - une zone absente / inactive / non calculable vaut 0 pour l'affichage ;
+    - un score égal à 0 n'entre PAS dans la moyenne ;
+    - le dénominateur est le nombre de scores strictement supérieurs à 0.
+
+    Exemples :
+    - 12 scores > 0  -> somme / 12
+    - 11 scores > 0  -> somme / 11
+    - 10 scores > 0  -> somme / 10
+    - aucun score > 0 -> score total = 0
+    """
+    scores_zones = {}
+
+    for section, equipement, label in EQUIPEMENTS_SCORE_TOTAL:
+        scores_zones[label] = _score_resume_zone(
+            resultats_groupes,
+            section,
+            equipement,
+        )
+
+    scores_comptes = [
+        float(score)
+        for score in scores_zones.values()
+        if score is not None and float(score) > 0
+    ]
+
+    somme = round(sum(scores_comptes), 8)
+    nombre_scores_comptes = len(scores_comptes)
+
+    score_total = (
+        round(somme / nombre_scores_comptes, 8)
+        if nombre_scores_comptes > 0
+        else 0.0
+    )
+
+    return score_total, somme, scores_zones, nombre_scores_comptes
+
+
 def calculer_score_shift(shift_id, anomalies=None, objectifs_kpi=None):
     mesures_shift = afficher_mesures_shift(shift_id)
     groupes = _regrouper_mesures(mesures_shift)
@@ -539,10 +624,20 @@ def calculer_score_shift(shift_id, anomalies=None, objectifs_kpi=None):
             "couverture": 100 if groupes_section else 0,
         }
 
+    score_total, somme_scores_12, scores_12, nombre_scores_comptes = calculer_score_total_12(
+        resultats_groupes
+    )
+
     return {
         "shift_id": shift_id,
-        "score_global": None,
-        "couverture": 0,
+        # score_global est conservé pour compatibilité avec d'anciennes parties
+        # de l'application. Il correspond désormais à la moyenne des scores > 0.
+        "score_global": score_total,
+        "score_total": score_total,
+        "somme_scores_12": somme_scores_12,
+        "scores_12": scores_12,
+        "nombre_scores_comptes": nombre_scores_comptes,
+        "couverture": 100,
         "nombre_anomalies": len(anomalies_shift),
         "sections": resultats_sections,
         "groupes": resultats_groupes,
