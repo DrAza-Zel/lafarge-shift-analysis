@@ -362,7 +362,7 @@ def charger_donnees_dashboard(parametres):
         )
 
         responsable = (
-            ", ".join(responsables_liste)
+            " / ".join(responsables_liste)
             if responsables_liste
             else "-"
         )
@@ -441,7 +441,7 @@ if anomalies:
     )
 
     df_anomalies["responsable"] = df_anomalies["responsables_liste"].apply(
-        lambda noms: ", ".join(noms) if noms else "-"
+        lambda noms: " / ".join(noms) if noms else "-"
     )
 
     df_anomalies["kpi_affiche"] = df_anomalies.apply(
@@ -516,7 +516,7 @@ if page == "Vue générale":
         col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Date", dernier_shift["date_debut"])
         col2.metric("Poste", dernier_shift["poste"])
-        col3.metric("Chef de poste (L1)", dernier_shift["chef_de_poste"])
+        col3.metric("Chef de poste", dernier_shift["chef_de_poste"])
         col4.metric("Score total", f'{float(dernier_shift["score_total"]):.2f} / 100')
         col5.metric("Scores comptés (>0)", int(dernier_shift["equipements_actifs"]))
 
@@ -869,7 +869,7 @@ elif page == "Classement":
     st.title("🏆 Classement des shifts et des chefs de poste")
     st.write(
         "Le classement utilise le score total de chaque shift. Le chef de poste "
-        "correspond au Responsable de conduite L1."
+        "correspond au Responsable L1 s'il existe, sinon au Responsable L2."
     )
 
     st.info(
@@ -1044,7 +1044,7 @@ elif page == "Classement":
                     "Rang",
                     "Shift",
                     "Poste",
-                    "Chef de poste (L1 or L2)",
+                    "Chef de poste",
                     "Score total / 100",
                 ]
 
@@ -1059,7 +1059,7 @@ elif page == "Classement":
                     graphique_shifts["Shift / Chef"] = (
                         graphique_shifts["Shift"].astype(str)
                         + " | "
-                        + graphique_shifts["Chef de poste (L1)"].astype(str)
+                        + graphique_shifts["Chef de poste"].astype(str)
                     )
                     st.bar_chart(
                         graphique_shifts.set_index("Shift / Chef")["Score total / 100"]
@@ -1122,7 +1122,7 @@ elif page == "Classement":
                 ).fillna(0.0)
 
                 if df_chefs_source.empty:
-                    st.info("Aucun chef de poste L1 renseigné sur cette sélection.")
+                    st.info("Aucun chef de poste renseigné sur cette sélection.")
                 else:
                     df_chefs = (
                         df_chefs_source.groupby("chef_de_poste", as_index=False)
@@ -1153,7 +1153,7 @@ elif page == "Classement":
 
                     tableau_chefs = df_chefs.rename(
                         columns={
-                            "chef_de_poste": "Chef de poste (L1)",
+                            "chef_de_poste": "Chef de poste",
                             "nombre_shifts": "Nombre de shifts",
                             "score_moyen": "Score moyen / 100",
                             "meilleur_score": "Meilleur shift / 100",
@@ -1168,11 +1168,11 @@ elif page == "Classement":
                     )
 
                     graphique_chefs = tableau_chefs[
-                        ["Chef de poste (L1)", "Score moyen / 100"]
+                        ["Chef de poste", "Score moyen / 100"]
                     ].copy()
                     if not graphique_chefs.empty:
                         st.bar_chart(
-                            graphique_chefs.set_index("Chef de poste (L1)")
+                            graphique_chefs.set_index("Chef de poste")
                         )
 
 
@@ -1210,7 +1210,7 @@ elif page == "Analyse détaillée":
         col1, col2, col3, col4, col5 = st.columns(5)
         col1.metric("Date", shift["date_debut"])
         col2.metric("Poste", shift["poste"])
-        col3.metric("Chef de poste (L1)", shift["chef_de_poste"])
+        col3.metric("Chef de poste", shift["chef_de_poste"])
         col4.metric("Score total", f'{float(shift["score_total"]):.2f} / 100')
         col5.metric("Anomalies", int(shift["anomalies"]))
 

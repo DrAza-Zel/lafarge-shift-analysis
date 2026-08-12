@@ -2,11 +2,7 @@ import re
 
 
 # Différentes écritures correspondant à la même personne
-ALIASES_RESPONSABLES = {
-    "ACHOUCHE": "ACHOUCHE ELBANNOURI",
-    "ELBANNOURI": "ACHOUCHE ELBANNOURI",
-    "ACHOUCHE ELBANNOURI": "ACHOUCHE ELBANNOURI",
-}
+ALIASES_RESPONSABLES = {}
 
 
 def normaliser_nom(nom):
@@ -27,11 +23,9 @@ def normaliser_nom(nom):
 
     nom = nom.upper()
 
-    # Appliquer un alias si le nom est connu
-    return ALIASES_RESPONSABLES.get(
-        nom,
-        nom
-    )
+    # Ne pas compléter ou remplacer automatiquement le nom.
+    # Exemple : "ELBANNOURI" reste "ELBANNOURI".
+    return nom
 
 
 def separer_responsables(texte):
