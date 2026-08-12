@@ -1,381 +1,672 @@
-import pdfplumber
 import re
+
+import pdfplumber
+
 from src.responsables import normaliser_responsables
+
+
+# -----------------------------------------------------------------------------
+# Utilitaires
+# -----------------------------------------------------------------------------
+
 
 def nettoyer(texte):
     if texte is None:
         return None
 
-    return " ".join(texte.split())
+    texte = str(texte).replace("\xa0", " ")
+    texte = " ".join(texte.split()).strip()
+    return texte or None
 
 
-def extraire_shift(pdf_path):
+def convertir_nombre(valeur):
+    """Convertit une cellule PDF en float sans faire planter l'import."""
+    valeur = nettoyer(valeur)
 
-    # Lecture du PDF
-    with pdfplumber.open(pdf_path) as pdf:
-        page = pdf.pages[0]
-        texte = page.extract_text()
-        table = page.extract_table()
+    if valeur is None:
+        return None
 
+    valeur = valeur.replace(" ", "")
+    valeur = valeur.replace(",", ".")
+    valeur = valeur.replace("−", "-")
 
-    # Extraction de la date et des heures
-    match_intervalle = re.search(
-        r"Interval From\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2}).*?"
-        r"To\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})",
-        texte
-    )
+    # Cellules vides / tirets utilisés comme absence de donnée.
+    if valeur in {"", "-", "–", "—"}:
+        return None
 
-    date_debut = match_intervalle.group(1)
-    heure_debut = match_intervalle.group(2)
-    date_fin = match_intervalle.group(3)
-    heure_fin = match_intervalle.group(4)
-
-
-    # Extraction du poste et des responsables L1 / L2
-    poste = None
-    responsable_l1 = None
-    responsable_l2 = None
-
-    indice_poste = None
-
-    for numero, ligne in enumerate(table):
-
-        if not ligne:
-            continue
-
-        ligne_nettoyee = [
-            nettoyer(cellule)
-            for cellule in ligne
-        ]
-
-        if "Poste" in ligne_nettoyee:
-            indice_poste = numero
-            break
+    try:
+        return float(valeur)
+    except (TypeError, ValueError):
+        return None
 
 
-    if (
-        indice_poste is not None
-        and indice_poste + 1 < len(table)
-    ):
+def cellules_nettoyees(ligne):
+    if not ligne:
+        return []
+    return [nettoyer(cellule) for cellule in ligne]
 
-        ligne_entetes = table[indice_poste]
-        ligne_valeurs = table[indice_poste + 1]
 
-        for indice, entete in enumerate(ligne_entetes):
+def premiere_cellule_non_vide(ligne):
+    for cellule in cellules_nettoyees(ligne):
+        if cellule:
+            return cellule
+    return None
 
-            entete = nettoyer(entete)
 
-            if entete is None:
+def contient_cellule(ligne, texte):
+    texte = texte.lower()
+
+    for cellule in cellules_nettoyees(ligne):
+        if cellule and texte in cellule.lower():
+            return True
+
+    return False
+
+
+def trouver_indice_section(lignes, noms):
+    """Cherche une section sans supposer qu'elle se trouve dans la colonne 0."""
+    noms = tuple(nom.lower() for nom in noms)
+
+    for numero, ligne in enumerate(lignes):
+        for cellule in cellules_nettoyees(ligne):
+            if not cellule:
                 continue
 
-            if entete == "Poste":
-                poste = nettoyer(
-                    ligne_valeurs[indice]
-                )
+            cellule_min = cellule.lower()
 
-            elif "Responsable de conduite L1" in entete:
-                 responsable_l1 = normaliser_responsables(nettoyer(ligne_valeurs[indice])
-                ) or None
+            if any(
+                cellule_min == nom
+                or cellule_min.startswith(nom + " ")
+                for nom in noms
+            ):
+                return numero
 
-            elif "Responsable de conduite L2" in entete:
-                responsable_l2 =normaliser_responsables(nettoyer(ligne_valeurs[indice])
-                ) or None 
+    return None
 
 
-    # Chercher la ligne d'en-tête Cuisson
-    indice_cuisson = None
+def normaliser_nom_equipement(nom):
+    nom = nettoyer(nom)
+    if nom is None:
+        return None
 
-    for numero, ligne in enumerate(table):
+    nom_min = nom.lower()
 
-        if ligne and nettoyer(ligne[0]) == "Cuisson":
-            indice_cuisson = numero
-            break
+    correspondances = [
+        (r"^raw\s*mill\s*1\b", "Raw mill 1"),
+        (r"^raw\s*mill\s*2\b", "Raw mill 2"),
+        (r"^kiln\s*1\b", "Kiln 1"),
+        (r"^kiln\s*2\b", "Kiln 2"),
+        (r"^coal\s*mill\s*1\b", "Coal mill 1"),
+        (r"^coal\s*mill\s*2\b", "Coal mill 2"),
+        (r"^emission\s*kiln\s*1\b", "Emission Kiln 1"),
+        (r"^emission\s*kiln\s*2\b", "Emission Kiln 2"),
+    ]
+
+    for motif, nom_normalise in correspondances:
+        if re.match(motif, nom_min, flags=re.IGNORECASE):
+            return nom_normalise
+
+    match_broyeur = re.match(
+        r"^broyeur(?:\s+ciments?)?\s*(1|2)\b",
+        nom_min,
+        flags=re.IGNORECASE,
+    )
+
+    if match_broyeur:
+        return f"Broyeur Ciments {match_broyeur.group(1)}"
+
+    return nom
 
 
-    # Récupérer les noms des colonnes Cuisson
-    entetes = table[indice_cuisson]
+def normaliser_entete(entete):
+    """Ramène les variantes d'en-têtes vers les noms utilisés dans la base."""
+    entete = nettoyer(entete)
+    if entete is None:
+        return None
+
+    cle = (
+        entete.lower()
+        .replace("é", "e")
+        .replace("è", "e")
+        .replace("ê", "e")
+        .replace("à", "a")
+        .replace("ç", "c")
+        .replace("_", " ")
+    )
+    cle = " ".join(cle.split())
+
+    aliases = {
+        "running hours (h)": "Running Hours (h)",
+        "number of stops (#)": "Number of stops (#)",
+        "feed rate (t/h)": "Feed rate (t/h)",
+        "production (t)": "Production (t)",
+        "stec (mj/t)": "STEC (Mj/t)",
+        "tsr (%)": "TSR (%)",
+        "co broyage (%)": "Co_broyage (%)",
+        "co-broyage (%)": "Co_broyage (%)",
+        "co_broyage (%)": "Co_broyage (%)",
+        "hlc (%)": "HLC (%)",
+        "pelite calcinee (t)": "Pélite Calcinée (t)",
+        "seec (kwh/t)": "SEEC (kwh/t)",
+        "cao libre (%)": "CaO libre (%)",
+        "lsf (%)": "LSF (%)",
+        "hm (h)": "HM (h)",
+        "arret (#)": "Arrêt (#)",
+        "production (tonne)": "Production (tonne)",
+        "debit (t/h)": "Débit (t/h)",
+        "hm cp (h)": "HM CP (h)",
+        "k/c fab (%)": "K/C fab (%)",
+        "adjuvant resist (g/t)": "Adjuvant Resist (g/t)",
+        "adjuvant debit (g/t)": "Adjuvant Débit (g/t)",
+        "mm (%)": "MM (%)",
+        "nox (mg/nm3)": "NOx (mg/Nm3)",
+        "nnc nox (#)": "NNC NOx (#)",
+        "so2 (mg/nm3)": "SO2 (mg/Nm3)",
+        "nnc so2 (#)": "NNC SO2 (#)",
+        "voc (mg/nm3)": "VOC (mg/Nm3)",
+        "nnc voc (#)": "NNC VOC (#)",
+        "hlc (mg/nm3)": "HLC (mg/Nm3)",
+        "nnc hlc (#)": "NNC HLC (#)",
+        "dust (mg/nm3)": "Dust (mg/Nm3)",
+        "nnc dust (#)": "NNC Dust (#)",
+        "hm cp1 (h)": "HM CP1 (h)",
+        "hm cp2 (h)": "HM CP2 (h)",
+        "hm cp3 (h)": "HM CP3 (h)",
+        "hm cp4 (h)": "HM CP4 (h)",
+        "pression (bar)": "PRESSION (bar)",
+    }
+
+    return aliases.get(cle, entete)
 
 
-    # Rendre les en-têtes uniques
+def rendre_entetes_uniques(entetes):
     entetes_uniques = []
-    compteur_entetes = {}
+    compteur = {}
 
-    for entete in entetes[1:]:
-
-        entete = nettoyer(entete)
+    for entete in entetes:
+        entete = normaliser_entete(entete)
 
         if entete is None:
             entetes_uniques.append(None)
             continue
 
-        if entete not in compteur_entetes:
-            compteur_entetes[entete] = 1
-            nom_entete = entete
+        compteur[entete] = compteur.get(entete, 0) + 1
 
+        if compteur[entete] == 1:
+            entetes_uniques.append(entete)
         else:
-            compteur_entetes[entete] += 1
+            entetes_uniques.append(f"{entete}_{compteur[entete]}")
 
-            nom_entete = (
-                entete
-                + "_"
-                + str(compteur_entetes[entete])
-            )
-
-        entetes_uniques.append(nom_entete)
-    # Harmoniser les anciennes versions du rapport
-    if "Co_broyage (%)" not in entetes_uniques:
-
-        indices_hlc = []
-
-        for indice, entete in enumerate(entetes_uniques):
-
-            if (
-                entete is not None
-                and entete.startswith("HLC (%)")
-            ):
-                indices_hlc.append(indice)
-
-        if len(indices_hlc) >= 2:
-            entetes_uniques[indices_hlc[0]] = "Co_broyage (%)"
-            entetes_uniques[indices_hlc[1]] = "HLC (%)"
+    return entetes_uniques
 
 
-    # Extraction des équipements Cuisson
+def harmoniser_anciens_entetes_cuisson(entetes):
+    """
+    Anciennes versions : deux colonnes "HLC (%)".
+    La première correspond à Co_broyage, la seconde à HLC.
+    """
+    if "Co_broyage (%)" in entetes:
+        return entetes
+
+    indices_hlc = [
+        i
+        for i, entete in enumerate(entetes)
+        if entete is not None and entete.startswith("HLC (%)")
+    ]
+
+    if len(indices_hlc) >= 2:
+        entetes[indices_hlc[0]] = "Co_broyage (%)"
+        entetes[indices_hlc[1]] = "HLC (%)"
+
+    return entetes
+
+
+def ligne_est_debut_section(ligne):
+    premier = premiere_cellule_non_vide(ligne)
+    if premier is None:
+        return False
+
+    premier_min = premier.lower()
+
+    return (
+        premier_min.startswith("broyeur")
+        or premier_min.startswith("environnement")
+        or premier_min.startswith("compresseur")
+        or premier_min.startswith("compressor")
+        or premier_min == "cuisson"
+        or premier_min == "poste"
+    )
+
+
+def extraire_toutes_les_lignes(pdf):
+    """
+    Récupère les tableaux de toutes les pages.
+    Contrairement à extract_table(), ceci supporte un rapport découpé
+    en plusieurs tableaux / sections.
+    """
+    lignes = []
+
+    for page in pdf.pages:
+        tables = page.extract_tables() or []
+
+        # Fallback pour certains PDF où extract_tables() ne renvoie rien.
+        if not tables:
+            table = page.extract_table()
+            if table:
+                tables = [table]
+
+        for table in tables:
+            if table:
+                lignes.extend(table)
+
+    return lignes
+
+
+# -----------------------------------------------------------------------------
+# Extraction identité du shift
+# -----------------------------------------------------------------------------
+
+
+def extraire_intervalle(texte):
+    match_intervalle = re.search(
+        r"Interval\s+From\s+"
+        r"(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})"
+        r".*?\bTo\s+"
+        r"(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})",
+        texte,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    if match_intervalle is None:
+        raise ValueError(
+            "L'intervalle From / To n'a pas pu être extrait du rapport."
+        )
+
+    return (
+        match_intervalle.group(1),
+        match_intervalle.group(2),
+        match_intervalle.group(3),
+        match_intervalle.group(4),
+    )
+
+
+def valeur_sous_colonne(lignes, indice_entete, indice_colonne):
+    """Cherche la première valeur non vide sous une colonne d'en-tête."""
+    for numero in range(indice_entete + 1, min(indice_entete + 5, len(lignes))):
+        ligne = lignes[numero]
+
+        if not ligne or indice_colonne >= len(ligne):
+            continue
+
+        valeur = nettoyer(ligne[indice_colonne])
+        if valeur:
+            return valeur
+
+    return None
+
+
+def extraire_poste_responsables(lignes, texte):
+    poste = None
+    responsable_l1 = None
+    responsable_l2 = None
+
+    for numero, ligne in enumerate(lignes):
+        cellules = cellules_nettoyees(ligne)
+
+        for indice, entete in enumerate(cellules):
+            if not entete:
+                continue
+
+            entete_min = entete.lower()
+
+            if entete_min == "poste":
+                valeur = valeur_sous_colonne(lignes, numero, indice)
+                if valeur and re.fullmatch(r"P\d+", valeur, flags=re.IGNORECASE):
+                    poste = valeur.upper()
+
+            elif "responsable de conduite l1" in entete_min:
+                valeur = valeur_sous_colonne(lignes, numero, indice)
+                responsable_l1 = normaliser_responsables(valeur) or None
+
+            elif "responsable de conduite l2" in entete_min:
+                valeur = valeur_sous_colonne(lignes, numero, indice)
+                responsable_l2 = normaliser_responsables(valeur) or None
+
+    # Fallback du poste via texte si la zone du tableau a changé.
+    if poste is None:
+        position = texte.lower().rfind("poste")
+        bloc = texte[position:] if position >= 0 else texte
+        match_poste = re.search(r"\b(P[123])\b", bloc, flags=re.IGNORECASE)
+
+        if match_poste:
+            poste = match_poste.group(1).upper()
+
+    return poste, responsable_l1, responsable_l2
+
+
+# -----------------------------------------------------------------------------
+# Sections industrielles
+# -----------------------------------------------------------------------------
+
+
+def extraire_cuisson(lignes):
     cuisson = []
+    indice_cuisson = trouver_indice_section(lignes, ("Cuisson",))
 
-    for ligne in table[indice_cuisson + 1:]:
+    if indice_cuisson is None:
+        return cuisson
 
+    ligne_entetes = lignes[indice_cuisson]
+
+    if not ligne_entetes:
+        return cuisson
+
+    entetes = rendre_entetes_uniques(ligne_entetes[1:])
+    entetes = harmoniser_anciens_entetes_cuisson(entetes)
+
+    for ligne in lignes[indice_cuisson + 1:]:
         if not ligne:
             continue
 
-        nom_equipement = nettoyer(ligne[0])
+        premier = premiere_cellule_non_vide(ligne)
 
-        # Le début de Broyeur signifie la fin de Cuisson
+        if premier is None:
+            continue
+
+        premier_min = premier.lower()
+
         if (
-            nom_equipement
-            and nom_equipement.startswith("Broyeur")
+            premier_min.startswith("broyeur")
+            or premier_min.startswith("environnement")
+            or premier_min.startswith("compresseur")
+            or premier_min.startswith("compressor")
+            or premier_min == "poste"
         ):
             break
 
-        if not nom_equipement:
+        nom_equipement = normaliser_nom_equipement(premier)
+
+        if nom_equipement not in {
+            "Raw mill 1",
+            "Kiln 1",
+            "Coal mill 1",
+            "Raw mill 2",
+            "Kiln 2",
+            "Coal mill 2",
+        }:
             continue
 
-        equipement = {
-            "equipement": nom_equipement
-        }
+        equipement = {"equipement": nom_equipement}
 
-        for entete, valeur in zip(
-            entetes_uniques,
-            ligne[1:]
-        ):
+        for entete, valeur in zip(entetes, ligne[1:]):
+            if entete is None:
+                continue
 
-            valeur = nettoyer(valeur)
-
-            if (
-                entete is not None
-                and valeur is not None
-                and valeur != ""
-            ):
-                equipement[entete] = float(valeur)
+            nombre = convertir_nombre(valeur)
+            if nombre is not None:
+                equipement[entete] = nombre
 
         cuisson.append(equipement)
 
+    return cuisson
 
-    # Extraction des broyeurs ciment
+
+def trouver_entetes_broyeur(lignes, indice_broyeur):
+    ligne = lignes[indice_broyeur]
+
+    # Cas normal : nom du broyeur + en-têtes sur la même ligne.
+    if ligne and sum(1 for c in ligne[1:] if nettoyer(c)) >= 3:
+        return indice_broyeur, ligne
+
+    # Ancien format éventuel : nom sur une ligne, en-têtes juste dessous.
+    for numero in range(indice_broyeur + 1, min(indice_broyeur + 5, len(lignes))):
+        candidate = lignes[numero]
+        texte_candidate = " | ".join(
+            cellule or "" for cellule in cellules_nettoyees(candidate)
+        ).lower()
+
+        if (
+            "hm" in texte_candidate
+            and "production" in texte_candidate
+            and ("debit" in texte_candidate or "débit" in texte_candidate)
+        ):
+            return numero, candidate
+
+    return indice_broyeur, ligne
+
+
+def extraire_broyeurs(lignes):
     broyeurs = []
 
-    for numero, ligne in enumerate(table):
-
-        if not ligne:
+    for numero, ligne in enumerate(lignes):
+        premier = premiere_cellule_non_vide(ligne)
+        if premier is None:
             continue
 
-        nom_broyeur = nettoyer(ligne[0])
+        nom_broyeur = normaliser_nom_equipement(premier)
 
-        if not (
-            nom_broyeur
-            and nom_broyeur.startswith("Broyeur Ciments")
-        ):
+        if nom_broyeur not in {"Broyeur Ciments 1", "Broyeur Ciments 2"}:
             continue
 
+        indice_entetes, ligne_entetes = trouver_entetes_broyeur(lignes, numero)
+        if not ligne_entetes:
+            continue
 
-        # La ligne actuelle contient les en-têtes du broyeur
-        entetes_broyeur = ligne
+        entetes = [normaliser_entete(e) for e in ligne_entetes[1:]]
+        indice_ligne = indice_entetes + 1
 
-        # Commencer à lire à la ligne suivante
-        indice_ligne = numero + 1
-
-
-        # Lire tous les produits du broyeur
-        while indice_ligne < len(table):
-
-            ligne_valeurs = table[indice_ligne]
+        while indice_ligne < len(lignes):
+            ligne_valeurs = lignes[indice_ligne]
+            indice_ligne += 1
 
             if not ligne_valeurs:
-                indice_ligne += 1
                 continue
 
-
-            produit = nettoyer(ligne_valeurs[0])
-
-
-            if not produit:
-                indice_ligne += 1
+            premier_valeur = premiere_cellule_non_vide(ligne_valeurs)
+            if premier_valeur is None:
                 continue
 
+            premier_min = premier_valeur.lower()
 
-            # Détecter le début d'une nouvelle section
             if (
-                produit.startswith("Broyeur Ciments")
-                or produit == "Environnement"
-                or produit == "COMPRESSEUR"
-                or produit == "Cuisson"
+                premier_min.startswith("broyeur")
+                or premier_min.startswith("environnement")
+                or premier_min.startswith("compresseur")
+                or premier_min.startswith("compressor")
+                or premier_min == "cuisson"
+                or premier_min == "poste"
             ):
                 break
 
+            # Les lignes d'en-tête intermédiaires ne sont pas des produits.
+            if premier_min in {"hm", "arrêt", "arret", "production", "debit", "débit"}:
+                continue
 
             broyeur = {
                 "broyeur": nom_broyeur,
-                "produit": produit
+                "produit": nettoyer(premier_valeur),
             }
 
+            nombre_mesures = 0
 
-            for entete, valeur in zip(
-                entetes_broyeur[1:],
-                ligne_valeurs[1:]
-            ):
+            for entete, valeur in zip(entetes, ligne_valeurs[1:]):
+                if entete is None:
+                    continue
 
-                entete = nettoyer(entete)
-                valeur = nettoyer(valeur)
+                nombre = convertir_nombre(valeur)
+                if nombre is not None:
+                    broyeur[entete] = nombre
+                    nombre_mesures += 1
 
-                if (
-                    entete is not None
-                    and valeur is not None
-                    and valeur != ""
-                ):
-                    broyeur[entete] = float(valeur)
+            # Évite d'ajouter une ligne de texte qui n'est pas un produit.
+            if nombre_mesures > 0:
+                broyeurs.append(broyeur)
 
-
-            broyeurs.append(broyeur)
-
-            indice_ligne += 1
+    return broyeurs
 
 
-    # Extraction des données environnement
+def extraire_environnement(lignes):
     environnement = []
+    indice = trouver_indice_section(lignes, ("Environnement", "Environment"))
 
-    indice_environnement = None
+    if indice is None:
+        return environnement
 
-    for numero, ligne in enumerate(table):
+    ligne_entetes = lignes[indice]
+    if not ligne_entetes:
+        return environnement
 
-        if (
-            ligne
-            and nettoyer(ligne[0]) == "Environnement"
-        ):
-            indice_environnement = numero
-            break
+    entetes = [normaliser_entete(e) for e in ligne_entetes[1:]]
 
-
-    # Récupérer les en-têtes Environnement
-    entetes_environnement = table[indice_environnement]
-
-
-    for ligne in table[indice_environnement + 1:]:
-
+    for ligne in lignes[indice + 1:]:
         if not ligne:
             continue
 
-        nom_emission = nettoyer(ligne[0])
-
-
-        # COMPRESSEUR signifie la fin de la section
-        if nom_emission == "COMPRESSEUR":
-            break
-
-
-        if not nom_emission:
+        premier = premiere_cellule_non_vide(ligne)
+        if premier is None:
             continue
 
+        premier_min = premier.lower()
 
-        emission = {
-            "equipement": nom_emission
-        }
-
-
-        for entete, valeur in zip(
-            entetes_environnement[1:],
-            ligne[1:]
+        if (
+            premier_min.startswith("compresseur")
+            or premier_min.startswith("compressor")
+            or premier_min == "poste"
         ):
+            break
 
-            entete = nettoyer(entete)
-            valeur = nettoyer(valeur)
+        nom_emission = normaliser_nom_equipement(premier)
 
-            if (
-                entete is not None
-                and valeur is not None
-                and valeur != ""
-            ):
-                emission[entete] = float(valeur)
+        if nom_emission not in {"Emission Kiln 1", "Emission Kiln 2"}:
+            continue
 
+        emission = {"equipement": nom_emission}
+
+        for entete, valeur in zip(entetes, ligne[1:]):
+            if entete is None:
+                continue
+
+            nombre = convertir_nombre(valeur)
+            if nombre is not None:
+                emission[entete] = nombre
 
         environnement.append(emission)
 
+    return environnement
 
-    # Extraction des données compresseurs
+
+def extraire_compresseurs(lignes):
     compresseurs = []
+    indice = trouver_indice_section(
+        lignes,
+        ("COMPRESSEUR", "COMPRESSOR", "Compresseurs", "Compressors"),
+    )
 
-    indice_compresseur = None
+    if indice is None:
+        return compresseurs
 
-    for numero, ligne in enumerate(table):
+    ligne_entetes = lignes[indice]
+    if not ligne_entetes:
+        return compresseurs
 
-        if (
-            ligne
-            and nettoyer(ligne[0]) == "COMPRESSEUR"
-        ):
-            indice_compresseur = numero
-            break
+    entetes = [normaliser_entete(e) for e in ligne_entetes[1:]]
 
-
-    # Récupérer les en-têtes Compresseur
-    entetes_compresseur = table[indice_compresseur]
-
-
-    for ligne in table[indice_compresseur + 1:]:
-
+    for ligne in lignes[indice + 1:]:
         if not ligne:
             continue
 
-        nom_equipement = nettoyer(ligne[0])
-
-        if not nom_equipement:
+        premier = premiere_cellule_non_vide(ligne)
+        if premier is None:
             continue
 
+        premier_min = premier.lower()
 
-        compresseur = {
-            "equipement": nom_equipement
-        }
+        if premier_min == "poste" or premier_min.startswith("responsable"):
+            break
 
+        nom_equipement = normaliser_nom_equipement(premier)
 
-        for entete, valeur in zip(
-            entetes_compresseur[1:],
-            ligne[1:]
-        ):
+        if nom_equipement not in {"Kiln 1", "Kiln 2"}:
+            continue
 
-            entete = nettoyer(entete)
-            valeur = nettoyer(valeur)
+        compresseur = {"equipement": nom_equipement}
 
-            if (
-                entete is not None
-                and valeur is not None
-                and valeur != ""
-            ):
-                compresseur[entete] = float(valeur)
+        for entete, valeur in zip(entetes, ligne[1:]):
+            if entete is None:
+                continue
 
+            nombre = convertir_nombre(valeur)
+            if nombre is not None:
+                compresseur[entete] = nombre
 
         compresseurs.append(compresseur)
 
+    return compresseurs
 
-    # Regrouper toutes les données du shift
-    shift = {
+
+# -----------------------------------------------------------------------------
+# Fonction principale
+# -----------------------------------------------------------------------------
+
+
+def extraire_shift(pdf_path):
+    with pdfplumber.open(pdf_path) as pdf:
+        if not pdf.pages:
+            raise ValueError("Le PDF ne contient aucune page.")
+
+        textes = []
+        for page in pdf.pages:
+            textes.append(page.extract_text() or "")
+
+        texte = "\n".join(textes)
+        lignes = extraire_toutes_les_lignes(pdf)
+
+    if not texte.strip():
+        raise ValueError("Aucun texte n'a pu être extrait du PDF.")
+
+    if not lignes:
+        raise ValueError("Aucun tableau exploitable n'a été détecté dans le PDF.")
+
+    date_debut, heure_debut, date_fin, heure_fin = extraire_intervalle(texte)
+    poste, responsable_l1, responsable_l2 = extraire_poste_responsables(
+        lignes,
+        texte,
+    )
+
+    cuisson = extraire_cuisson(lignes)
+    broyeurs = extraire_broyeurs(lignes)
+    environnement = extraire_environnement(lignes)
+    compresseurs = extraire_compresseurs(lignes)
+
+    # Messages précis : plus jamais de table[None].
+    sections_dans_texte = {
+        "cuisson": "cuisson" in texte.lower(),
+        "environnement": "environnement" in texte.lower()
+        or "environment" in texte.lower(),
+        "compresseurs": "compresseur" in texte.lower()
+        or "compressor" in texte.lower(),
+    }
+
+    problemes = []
+
+    if sections_dans_texte["cuisson"] and not cuisson:
+        problemes.append("Cuisson")
+
+    if sections_dans_texte["environnement"] and not environnement:
+        problemes.append("Environnement")
+
+    if sections_dans_texte["compresseurs"] and not compresseurs:
+        problemes.append("Compresseurs")
+
+    if problemes:
+        raise ValueError(
+            "Le PDF contient les sections "
+            + ", ".join(problemes)
+            + " mais leur tableau n'a pas pu être interprété. "
+            "Le format du rapport est probablement différent de la version habituelle."
+        )
+
+    return {
         "date_debut": date_debut,
         "heure_debut": heure_debut,
         "date_fin": date_fin,
@@ -386,8 +677,5 @@ def extraire_shift(pdf_path):
         "cuisson": cuisson,
         "broyeurs": broyeurs,
         "environnement": environnement,
-        "compresseurs": compresseurs
+        "compresseurs": compresseurs,
     }
-
-
-    return shift
